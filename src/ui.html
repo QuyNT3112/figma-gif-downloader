@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GIF Downloader & Frame Exporter for Figma</title>
+  <style>
+    :root {
+      --bg-primary: #121214;
+      --bg-secondary: #1a1a1e;
+      --bg-tertiary: #24242a;
+      --bg-card: #1e1e24;
+      --bg-card-hover: #282832;
+      --border: #2e2e38;
+      --border-focus: #3b82f6;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --text-dim: #6b7280;
+      
+      --accent: #0d99ff;
+      --accent-hover: #007be5;
+      --accent-glow: rgba(13, 153, 255, 0.25);
+      
+      --success: #10b981;
+      --success-glow: rgba(16, 185, 129, 0.2);
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --purple: #a855f7;
+      
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.25);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+      --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+      --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-family);
+      background-color: var(--bg-primary);
+      color: var(--text-main);
+      font-size: 13px;
+      line-height: 1.5;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      user-select: none;
+    }
+
+    /* Header */
+    .app-header {
+      padding: 12px 16px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-icon {
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, #0d99ff 0%, #8b5cf6 100%);
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 8px rgba(13, 153, 255, 0.4);
+      color: #fff;
+      font-weight: 800;
+      font-size: 12px;
+      letter-spacing: -0.5px;
+    }
+
+    .brand-title {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .badge-pro {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 6px;
+      background: rgba(13, 153, 255, 0.15);
+      color: var(--accent);
+      border: 1px solid rgba(13, 153, 255, 0.3);
+      border-radius: 12px;
+    }
+
+    .selection-pill {
+      font-size: 11px;
+      padding: 3px 8px;
+      background: var(--bg-tertiary);
+      border-radius: 12px;
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      max-width: 200px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .selection-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 6px var(--accent);
+      flex-shrink: 0;
+    }
+
+    /* Tabs */
+    .tabs-nav {
+      display: flex;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      padding: 4px 12px 0 12px;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 8px 10px;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      position: relative;
+      transition: all 0.2s ease;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .tab-btn.active {
+      color: var(--accent);
+      background: var(--bg-primary);
+    }
+
+    .tab-btn.active::after {
+      content: "";
+      position: absolute;
+      bottom: -1px;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--accent);
+      box-shadow: 0 -2px 6px var(--accent);
+    }
+
+    /* Main Container */
+    .app-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .tab-content {
+      display: none;
+      flex-direction: column;
+      gap: 14px;
+      height: 100%;
+    }
+
+    .tab-content.active {
+      display: flex;
+    }
+
+    /* Control Panel */
+    .panel-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .scope-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .segmented-control {
+      flex: 1;
+      display: flex;
+      background: var(--bg-primary);
+      padding: 2px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+    }
+
+    .seg-item {
+      flex: 1;
+      padding: 6px 8px;
+      font-size: 11px;
+      font-weight: 500;
+      text-align: center;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .seg-item.active {
+      background: var(--bg-tertiary);
+      color: var(--text-main);
+      font-weight: 600;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 7px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+
+    .btn:active {
+      transform: scale(0.98);
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+
+    .btn-secondary {
+      background: var(--bg-tertiary);
+      color: var(--text-main);
+      border-color: var(--border);
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg-card-hover);
+      border-color: #4a4a58;
+    }
+
+    .btn-success {
+      background: var(--success);
+      color: #fff;
+    }
+
+    .btn-success:hover {
+      background: #059669;
+      box-shadow: 0 0 12px var(--success-glow);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none !important;
+      box-shadow: none !important;
+    }
+
+    /* Mode Banner */
+    .mode-banner {
+      background: rgba(13, 153, 255, 0.08);
+      border: 1px solid rgba(13, 153, 255, 0.25);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .mode-label {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .mode-select {
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      outline: none;
+    }
+
+    /* Filter & Search Bar */
+    .action-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .search-box {
+      flex: 1;
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .search-input {
+      width: 100%;
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 6px 28px 6px 28px;
+      color: var(--text-main);
+      font-size: 12px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .search-input:focus {
+      border-color: var(--accent);
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 8px;
+      color: var(--text-dim);
+      pointer-events: none;
+      font-size: 12px;
+    }
+
+    .search-clear {
+      position: absolute;
+      right: 8px;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 12px;
+      display: none;
+      background: transparent;
+      border: none;
+    }
+
+    .search-clear:hover {
+      color: #fff;
+    }
+
+    /* Stats & Batch Action */
+    .stats-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--text-muted);
+      padding: 2px 2px;
+    }
+
+    .batch-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    /* Grid & Cards */
+    .cards-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .frame-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+
+    .frame-card:hover {
+      border-color: #444452;
+      background: var(--bg-card-hover);
+    }
+
+    .preview-container {
+      width: 110px;
+      height: 80px;
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      background: repeating-conic-gradient(#202026 0% 25%, #18181e 0% 50%) 50% / 12px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      border: 1px solid var(--border);
+      position: relative;
+      cursor: pointer;
+    }
+
+    .preview-img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    .preview-spinner {
+      font-size: 18px;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      100% { transform: rotate(360deg); }
+    }
+
+    .card-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .card-title-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .card-subtitle {
+      font-size: 11px;
+      color: var(--text-dim);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .card-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      font-size: 11px;
+    }
+
+    .pill {
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 10px;
+    }
+
+    .pill-frame {
+      background: rgba(13, 153, 255, 0.15);
+      color: var(--accent);
+      border: 1px solid rgba(13, 153, 255, 0.3);
+    }
+
+    .pill-size {
+      color: var(--text-muted);
+      background: var(--bg-tertiary);
+    }
+
+    .card-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      align-items: flex-end;
+      flex-shrink: 0;
+    }
+
+    .action-row {
+      display: flex;
+      gap: 6px;
+    }
+
+    .btn-icon {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-size: 12px;
+    }
+
+    .btn-icon:hover {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    /* Progress banner */
+    .progress-banner {
+      display: none;
+      background: var(--bg-card);
+      border: 1px solid var(--accent);
+      border-radius: var(--radius-sm);
+      padding: 8px 12px;
+      font-size: 12px;
+      color: var(--text-main);
+      align-items: center;
+      gap: 10px;
+      animation: fadeIn 0.2s ease;
+    }
+
+    .progress-bar-wrap {
+      flex: 1;
+      height: 6px;
+      background: var(--bg-primary);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+      transition: width 0.15s ease;
+    }
+
+    /* Empty state */
+    .empty-state {
+      padding: 24px 16px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: var(--text-muted);
+      background: var(--bg-card);
+      border-radius: var(--radius-md);
+      border: 1px dashed var(--border);
+    }
+
+    .empty-icon {
+      font-size: 32px;
+      filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.3));
+    }
+
+    .empty-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .empty-desc {
+      font-size: 11.5px;
+      max-width: 320px;
+      line-height: 1.4;
+      color: var(--text-dim);
+    }
+
+    /* Frame Sequencer Tab */
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .form-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .form-select {
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 6px 10px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      outline: none;
+      flex: 1;
+    }
+
+    .frames-strip {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 8px 4px;
+      min-height: 80px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-primary);
+    }
+
+    .frame-thumb {
+      width: 60px;
+      height: 60px;
+      border-radius: 4px;
+      background: #222;
+      border: 1px solid var(--border);
+      position: relative;
+      flex-shrink: 0;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .frame-thumb img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    .frame-num {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      font-size: 9px;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 1px 4px;
+      border-radius: 2px;
+      color: #fff;
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.85);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .modal-backdrop.active {
+      display: flex;
+    }
+
+    .modal-box {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      max-width: 90%;
+      max-height: 90%;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: var(--shadow-lg);
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-img-wrap {
+      max-width: 380px;
+      max-height: 380px;
+      overflow: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: repeating-conic-gradient(#202026 0% 25%, #18181e 0% 50%) 50% / 14px 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+    }
+
+    .modal-img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    /* Toast */
+    .toast-container {
+      position: fixed;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 999;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .toast {
+      background: #272730;
+      border: 1px solid #3f3f4c;
+      color: #fff;
+      font-size: 11.5px;
+      padding: 7px 14px;
+      border-radius: 20px;
+      box-shadow: var(--shadow-md);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      animation: fadeIn 0.2s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Guide Tab */
+    .guide-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .guide-step {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .step-number {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .step-text h4 {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .step-text p {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- App Header -->
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-icon">GIF</div>
+      <div>
+        <div class="brand-title">
+          Frame & GIF Exporter <span class="badge-pro">PRO</span>
+        </div>
+      </div>
+    </div>
+    <div class="selection-pill" id="selectionStatus">
+      <span class="selection-dot"></span>
+      <span id="selectionText">Đang theo dõi canvas...</span>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <nav class="tabs-nav">
+    <button class="tab-btn active" id="tabExtractBtn" data-tab="tabExtract">
+      <span>🖼️</span> Xuất Frame chứa GIF
+    </button>
+    <button class="tab-btn" id="tabSequencerBtn" data-tab="tabSequencer">
+      <span>🎬</span> Ghép Frame -> GIF
+    </button>
+    <button class="tab-btn" id="tabGuideBtn" data-tab="tabGuide">
+      <span>💡</span> Hướng dẫn
+    </button>
+  </nav>
+
+  <!-- App Body -->
+  <main class="app-body">
+
+    <!-- TAB 1: FRAME & GIF EXPORTER -->
+    <div class="tab-content active" id="tabExtract">
+      <div class="panel-card">
+        <!-- Scope and Scan Button -->
+        <div class="scope-row">
+          <div class="segmented-control">
+            <button class="seg-item active" id="scopeSelectionBtn">🎯 Vùng chọn (Frame)</button>
+            <button class="seg-item" id="scopePageBtn">🌐 Toàn bộ trang</button>
+          </div>
+          <button class="btn btn-primary" id="btnScan">
+            <span id="scanIcon">⚡</span> Quét ngay
+          </button>
+        </div>
+
+        <!-- Mode & Scale Bar -->
+        <div class="mode-banner">
+          <div class="mode-label">
+            <span>⚙️ Chế độ xuất:</span>
+            <select id="exportModeSelect" class="mode-select">
+              <option value="frame" selected>🖼️ Xuất cả Frame (Toàn bộ Widget)</option>
+              <option value="raw">📦 Chỉ lấy file GIF rời</option>
+            </select>
+          </div>
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <span style="font-size: 11px; color: var(--text-muted);">Độ nét:</span>
+            <select id="exportScaleSelect" class="mode-select" style="padding: 3px 6px;">
+              <option value="1" selected>1x (Chuẩn Figma)</option>
+              <option value="2">2x HD (Sắc nét)</option>
+              <option value="3">3x Retina</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Search Bar & Filter -->
+        <div class="action-bar">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="searchInput" class="search-input" placeholder="Lọc theo tên Frame (ví dụ 37, 42...)...">
+            <button class="search-clear" id="searchClearBtn" title="Xóa lọc">✕</button>
+          </div>
+          <select id="typeFilterSelect" class="mode-select" style="min-width: 120px; padding: 7px 8px; font-size: 11px;">
+            <option value="all" selected>Tất cả Frame</option>
+            <option value="animated">✨ Ảnh động/GIF</option>
+            <option value="static">🖼️ Ảnh tĩnh</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Rendering Progress Banner -->
+      <div class="progress-banner" id="progressBanner">
+        <span id="progressText">Đang dựng hoạt ảnh Frame...</span>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar-fill" id="progressBarFill"></div>
+        </div>
+      </div>
+
+      <!-- Stats Bar & Batch Download -->
+      <div class="stats-bar">
+        <span id="statsLabel">Chưa quét. Hãy bấm "Quét ngay"</span>
+        <div class="batch-actions">
+          <button class="btn btn-success" id="btnDownloadZip" disabled style="padding: 5px 12px; font-size: 11px;">
+            📦 Xuất tất cả các Frame (ZIP)
+          </button>
+        </div>
+      </div>
+
+      <!-- Cards Container -->
+      <div id="cardsContainer" class="cards-grid">
+        <div class="empty-state">
+          <div class="empty-icon">🎨</div>
+          <div class="empty-title">Xuất cả Frame thành ảnh GIF động</div>
+          <div class="empty-desc">
+            Chọn các Frame widget (như 37, 42, 39...) hoặc bấm <b>"Toàn bộ trang"</b> để tự động quét toàn bộ Section chứa widget!
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: FRAME SEQUENCER -->
+    <div class="tab-content" id="tabSequencer">
+      <div class="panel-card">
+        <p style="font-size: 12px; color: var(--text-muted);">
+          Biến các Frame / Artboard riêng biệt trên Figma thành hoạt ảnh GIF chuyển động nhanh chóng.
+        </p>
+        <button class="btn btn-secondary" id="btnFetchFrames">
+          🔄 Lấy các Frame đang chọn
+        </button>
+
+        <div class="form-group" style="margin-top: 6px;">
+          <div class="form-label">Thứ tự các Frame (<span id="framesCountLabel">0</span> frame)</div>
+          <div class="frames-strip" id="framesStrip">
+            <div style="font-size: 11px; color: var(--text-dim); margin: auto;">Chưa chọn Frame nào</div>
+          </div>
+        </div>
+
+        <div class="form-row" style="margin-top: 4px;">
+          <div class="form-group" style="flex: 1;">
+            <div class="form-label">Tốc độ (FPS)</div>
+            <select id="seqFpsSelect" class="form-select">
+              <option value="4">4 FPS (Chậm)</option>
+              <option value="8">8 FPS (Mượt)</option>
+              <option value="12" selected>12 FPS (Chuẩn hoạt họa)</option>
+              <option value="20">20 FPS (Rất mượt)</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <div class="form-label">Tỉ lệ xuất (Scale)</div>
+            <select id="seqScaleSelect" class="form-select">
+              <option value="0.5">0.5x (File siêu nhẹ)</option>
+              <option value="1" selected>1x (Chuẩn thiết kế)</option>
+              <option value="2">2x (Sắc nét HD)</option>
+            </select>
+          </div>
+        </div>
+
+        <button class="btn btn-primary" id="btnGenerateGif" disabled style="margin-top: 6px;">
+          🎬 Xuất Hoạt Ảnh GIF
+        </button>
+      </div>
+
+      <!-- Generated GIF Preview Section -->
+      <div id="sequencerResultCard" class="panel-card" style="display: none; align-items: center; text-align: center;">
+        <div class="form-label">Kết quả xem trước</div>
+        <div style="width: 100%; max-height: 220px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #000; border-radius: var(--radius-sm); border: 1px solid var(--border); padding: 4px;">
+          <img id="generatedGifPreview" style="max-width: 100%; max-height: 200px; object-fit: contain;">
+        </div>
+        <div id="generatedGifMeta" style="font-size: 11px; color: var(--text-muted); margin-top: 4px;"></div>
+        <button class="btn btn-success" id="btnDownloadGeneratedGif" style="width: 100%; margin-top: 8px;">
+          💾 Tải file GIF này về máy
+        </button>
+      </div>
+    </div>
+
+    <!-- TAB 3: GUIDE -->
+    <div class="tab-content" id="tabGuide">
+      <div class="guide-card">
+        <h3 style="font-size: 13px; font-weight: 700; color: var(--accent);">📌 Tính năng Xuất cả Frame (Widget)</h3>
+        
+        <div class="guide-step">
+          <div class="step-number">1</div>
+          <div class="step-text">
+            <h4>Xuất cả Frame hoàn chỉnh</h4>
+            <p>Plugin chụp lại toàn bộ nền, chữ (giờ, ngày, lịch, phần trăm pin) và ghép từng khung hình chuyển động của GIF vào đúng tọa độ ban đầu.</p>
+          </div>
+        </div>
+
+        <div class="guide-step">
+          <div class="step-number">2</div>
+          <div class="step-text">
+            <h4>Hỗ trợ Section và Auto-Layout</h4>
+            <p>Dù các widget nằm trong Section hay sử dụng Auto-Layout, plugin đều định vị chuẩn xác từng widget riêng biệt.</p>
+          </div>
+        </div>
+
+        <div class="guide-step">
+          <div class="step-number">3</div>
+          <div class="step-text">
+            <h4>Tải hàng loạt bằng file ZIP</h4>
+            <p>Chuyển sang "Toàn bộ trang" > Bấm "Quét ngay" > Bấm "Xuất tất cả các Frame (ZIP)".</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Fullscreen Preview Modal -->
+  <div class="modal-backdrop" id="previewModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <span id="modalTitle" style="font-weight: 600; font-size: 13px;">Chi tiết hoạt ảnh</span>
+        <button class="btn-icon" id="btnCloseModal">✕</button>
+      </div>
+      <div class="modal-img-wrap">
+        <img id="modalImg" class="modal-img">
+      </div>
+      <div id="modalMeta" style="font-size: 11px; color: var(--text-muted); text-align: center;"></div>
+      <button class="btn btn-primary" id="btnModalDownload">
+        📥 Tải GIF này về máy
+      </button>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- SCRIPT INJECTION BY ESBUILD -->
+  <!-- INJECT_UI_SCRIPT -->
+
+</body>
+</html>
