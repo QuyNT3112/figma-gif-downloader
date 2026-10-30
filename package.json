@@ -14,6 +14,7 @@
   "type": "commonjs",
   "devDependencies": {
     "@figma/plugin-typings": "^1.142.0",
+    "@types/omggif": "^1.0.5",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2"
   },

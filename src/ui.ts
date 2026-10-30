@@ -466,7 +466,7 @@ async function renderCompositeFrameGif(
     // 2. Load base PNG
     let baseImg: HTMLImageElement | null = null;
     if (basePngBytes && basePngBytes.length > 0) {
-      const baseBlob = new Blob([basePngBytes], { type: "image/png" });
+      const baseBlob = new Blob([basePngBytes as any], { type: "image/png" });
       const url = URL.createObjectURL(baseBlob);
       try {
         baseImg = await loadImage(url);
@@ -750,7 +750,7 @@ async function renderCompositeFrameGif(
 
       encoder.finish();
       const outBytes = encoder.bytes();
-      const resultBlob = new Blob([outBytes], { type: "image/gif" });
+      const resultBlob = new Blob([outBytes as any], { type: "image/gif" });
       item.renderedFrameBlob = resultBlob;
       item.renderedFrameBlobUrl = URL.createObjectURL(resultBlob);
       return resultBlob;
@@ -758,18 +758,18 @@ async function renderCompositeFrameGif(
 
     // Fallback: Return base frame PNG as blob if single-frame
     if (basePngBytes && basePngBytes.length > 0) {
-      const resultBlob = new Blob([basePngBytes], { type: "image/png" });
+      const resultBlob = new Blob([basePngBytes as any], { type: "image/png" });
       item.renderedFrameBlob = resultBlob;
       item.renderedFrameBlobUrl = URL.createObjectURL(resultBlob);
       return resultBlob;
     }
 
     // Ultimate fallback: raw sticker image
-    const rawBlob = new Blob([item.gifBytes], { type: item.mimeType || "image/png" });
+    const rawBlob = new Blob([item.gifBytes as any], { type: item.mimeType || "image/png" });
     return rawBlob;
   } catch (err) {
     console.warn("Composite frame render error:", err);
-    return new Blob([item.gifBytes], { type: item.mimeType || "image/png" });
+    return new Blob([item.gifBytes as any], { type: item.mimeType || "image/png" });
   } finally {
     item.isRendering = false;
   }
@@ -986,7 +986,7 @@ function renderCards(items: ScannedFrameItem[]) {
     // Generate raw animated Blob URL for immediate playback in browser
     if (!item.rawGifBlobUrl) {
       const mime = item.mimeType || (item.isGif ? "image/gif" : "image/png");
-      const blob = new Blob([item.gifBytes], { type: mime });
+      const blob = new Blob([item.gifBytes as any], { type: mime });
       item.rawGifBlobUrl = URL.createObjectURL(blob);
     }
 
@@ -1106,7 +1106,7 @@ function renderCards(items: ScannedFrameItem[]) {
       const isAnim = item.isGif || item.isAnimated;
       const ext = isAnim ? "gif" : (item.format.toLowerCase().includes("webp") ? "webp" : "png");
       const mime = isAnim ? "image/gif" : (item.mimeType || "image/png");
-      const blob = new Blob([item.gifBytes], { type: mime });
+      const blob = new Blob([item.gifBytes as any], { type: mime });
       triggerDownload(blob, `${sanitizeFilename(item.gifNodeName || item.frameName)}.${ext}`);
       showToast(`Đã tải file ảnh: ${item.gifNodeName}.${ext}`);
     });
@@ -1289,7 +1289,7 @@ function initSequencer() {
       for (let i = 0; i < currentSequencerFrames.length; i++) {
         btnGenerate.innerText = `⏳ Xử lý frame ${i + 1}/${currentSequencerFrames.length}...`;
         const frame = currentSequencerFrames[i];
-        const blob = new Blob([frame.bytes], { type: "image/png" });
+        const blob = new Blob([frame.bytes as any], { type: "image/png" });
         const objUrl = URL.createObjectURL(blob);
         const img = await loadImage(objUrl);
         URL.revokeObjectURL(objUrl);
@@ -1341,7 +1341,7 @@ function initSequencer() {
 
       encoder.finish();
       const outputBytes = encoder.bytes();
-      generatedSequencerBlob = new Blob([outputBytes], { type: "image/gif" });
+      generatedSequencerBlob = new Blob([outputBytes as any], { type: "image/gif" });
       const previewUrl = URL.createObjectURL(generatedSequencerBlob);
 
       if (generatedGifPreview) {
@@ -1431,7 +1431,7 @@ window.onmessage = (event) => {
     if (framesStrip) {
       framesStrip.innerHTML = "";
       currentSequencerFrames.forEach((frame) => {
-        const blob = new Blob([frame.bytes], { type: "image/png" });
+        const blob = new Blob([frame.bytes as any], { type: "image/png" });
         const url = URL.createObjectURL(blob);
         frame.blobUrl = url;
 
