@@ -843,10 +843,8 @@ figma.ui.onmessage = async (msg) => {
               constraint: { type: "SCALE", value: scale }
             });
 
-            // Exact page-space origin of the exported image
-            const exportBounds = (container.clipsContent && container.absoluteBoundingBox)
-              ? container.absoluteBoundingBox
-              : (container.absoluteRenderBounds || container.absoluteBoundingBox);
+            // Exact page-space origin of the exported image (always matches exportAsync() rendering)
+            const exportBounds = container.absoluteRenderBounds || container.absoluteBoundingBox;
 
             exportOriginX = exportBounds ? exportBounds.x : (container.absoluteBoundingBox?.x || 0);
             exportOriginY = exportBounds ? exportBounds.y : (container.absoluteBoundingBox?.y || 0);

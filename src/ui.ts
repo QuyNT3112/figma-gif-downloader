@@ -640,11 +640,11 @@ async function renderCompositeFrameGif(
         const data = imgData.data;
 
         // 1. Mathematical Rounded Rectangle Mask:
-        // Apply corner rounding if canvas matches exact widget dimensions (eliminates black corners on standalone widgets)
-        if (cornerRadius > 0 && exportWidth === targetWidth && exportHeight === targetHeight) {
+        // Apply corner rounding if capsule or cornerRadius (eliminates black corners and stray pixels on standalone widgets)
+        if (cornerRadius > 0) {
           for (let y = 0; y < exportHeight; y++) {
             for (let x = 0; x < exportWidth; x++) {
-              if (!isInsideRoundedRect(x, y, exportWidth, exportHeight, cornerRadius)) {
+              if (!isInsideRoundedRect(x - offsetX, y - offsetY, targetWidth, targetHeight, cornerRadius)) {
                 const idx = (y * exportWidth + x) * 4;
                 data[idx] = 0;
                 data[idx + 1] = 0;
@@ -713,6 +713,18 @@ async function renderCompositeFrameGif(
           } else {
             cCtx.beginPath();
             cCtx.rect(layer.clipBox.drawX, layer.clipBox.drawY, layer.clipBox.drawW, layer.clipBox.drawH);
+          }
+          cCtx.clip();
+        } else if (item.clipsContent || item.isCapsule || (item.cornerRadius && item.cornerRadius > 0)) {
+          // If container itself is a clipping frame or capsule widget, clip to container bounds
+          const cRadius = item.isCapsule
+            ? Math.round(targetHeight / 2)
+            : (item.cornerRadius ? Math.min(Math.round(item.cornerRadius * scaleFactor), Math.floor(targetHeight / 2), Math.floor(targetWidth / 2)) : 0);
+          if (cRadius > 0) {
+            drawRoundedRect(cCtx, offsetX, offsetY, targetWidth, targetHeight, cRadius);
+          } else {
+            cCtx.beginPath();
+            cCtx.rect(offsetX, offsetY, targetWidth, targetHeight);
           }
           cCtx.clip();
         }

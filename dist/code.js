@@ -612,7 +612,7 @@
                 format: "PNG",
                 constraint: { type: "SCALE", value: scale }
               });
-              const exportBounds = container.clipsContent && container.absoluteBoundingBox ? container.absoluteBoundingBox : container.absoluteRenderBounds || container.absoluteBoundingBox;
+              const exportBounds = container.absoluteRenderBounds || container.absoluteBoundingBox;
               exportOriginX = exportBounds ? exportBounds.x : container.absoluteBoundingBox?.x || 0;
               exportOriginY = exportBounds ? exportBounds.y : container.absoluteBoundingBox?.y || 0;
               if (container.absoluteBoundingBox) {
