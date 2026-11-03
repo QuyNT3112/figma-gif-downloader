@@ -46,3 +46,4 @@ declare module "gifenc" {
     format?: string
   ): Uint8Array;
 }
+

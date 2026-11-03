@@ -84,8 +84,14 @@ let currentSequencerFrames: ExportedSequencerFrame[] = [];
 let generatedSequencerBlob: Blob | null = null;
 let activeModalItem: ScannedFrameItem | null = null;
 
+interface BasePngResult {
+  bytes: Uint8Array;
+  offsetX: number;
+  offsetY: number;
+}
+
 // Pending requests for Base PNG
-const pendingBasePngRequests = new Map<string, (bytes: Uint8Array) => void>();
+const pendingBasePngRequests = new Map<string, (res: BasePngResult) => void>();
 
 // Helpers
 function formatBytes(bytes: number, decimals = 1): string {
@@ -157,20 +163,20 @@ function updateProgressBar(visible: boolean, text = "", percent = 0) {
 }
 
 // Request Base PNG on demand from Figma at specific scale (hides all animated sticker nodes simultaneously)
-function requestBasePng(frameId: string, gifNodeIds: string[] | string, scale: number): Promise<Uint8Array> {
+function requestBasePng(frameId: string, gifNodeIds: string[] | string, scale: number): Promise<BasePngResult> {
   const ids = Array.isArray(gifNodeIds) ? gifNodeIds : [gifNodeIds];
   return new Promise((resolve) => {
     const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const timeout = setTimeout(() => {
       if (pendingBasePngRequests.has(requestId)) {
         pendingBasePngRequests.delete(requestId);
-        resolve(new Uint8Array(0));
+        resolve({ bytes: new Uint8Array(0), offsetX: 0, offsetY: 0 });
       }
     }, 15000);
 
-    pendingBasePngRequests.set(requestId, (bytes: Uint8Array) => {
+    pendingBasePngRequests.set(requestId, (res: BasePngResult) => {
       clearTimeout(timeout);
-      resolve(bytes);
+      resolve(res);
     });
 
     postToFigma({
@@ -461,7 +467,8 @@ async function renderCompositeFrameGif(
     if (layerIds.length === 0 && item.gifNodeId) layerIds.push(item.gifNodeId);
 
     // 1. Fetch clean base PNG from Figma at currentScale with all animated stickers hidden
-    const basePngBytes = await requestBasePng(item.frameId, layerIds, currentScale);
+    const basePngResult = await requestBasePng(item.frameId, layerIds, currentScale);
+    const basePngBytes = basePngResult.bytes;
 
     // 2. Load base PNG
     let baseImg: HTMLImageElement | null = null;
@@ -476,26 +483,38 @@ async function renderCompositeFrameGif(
     }
 
     // 3. Exact export dimensions strictly based on 1x frameWidth and currentScale
-    let exportWidth = Math.max(1, Math.round(item.frameWidth * currentScale));
-    let exportHeight = Math.max(1, Math.round(item.frameHeight * currentScale));
+    const targetWidth = Math.max(1, Math.round(item.frameWidth * currentScale));
+    const targetHeight = Math.max(1, Math.round(item.frameHeight * currentScale));
 
-    // Ensure canvas dimensions match baseImg dimensions exactly (prevents any stretching or squashing)
+    let exportWidth = targetWidth;
+    let exportHeight = targetHeight;
+    let offsetX = basePngResult.offsetX || 0;
+    let offsetY = basePngResult.offsetY || 0;
+
+    // Ensure canvas dimensions match baseImg dimensions if Figma exported extra bounds (effects, shadow, padding)
     if (baseImg && baseImg.width > 0 && baseImg.height > 0) {
       exportWidth = baseImg.width;
       exportHeight = baseImg.height;
+
+      if (offsetX === 0 && exportWidth > targetWidth) {
+        offsetX = Math.max(0, Math.round((exportWidth - targetWidth) / 2));
+      }
+      if (offsetY === 0 && exportHeight > targetHeight) {
+        offsetY = Math.max(0, Math.round((exportHeight - targetHeight) / 2));
+      }
     }
 
-    // Calculate exact corner radius for this scale
+    // Calculate exact corner radius for the widget
     let cornerRadius = 0;
     if (item.isCapsule) {
       // Pill capsule has radius = half height
-      cornerRadius = Math.round(exportHeight / 2);
+      cornerRadius = Math.round(targetHeight / 2);
     } else if (item.cornerRadius && item.cornerRadius > 0) {
       // Exact corner radius scaled to current export scale (capped to half dimensions)
       cornerRadius = Math.min(
         Math.round(item.cornerRadius * currentScale),
-        Math.floor(exportHeight / 2),
-        Math.floor(exportWidth / 2)
+        Math.floor(targetHeight / 2),
+        Math.floor(targetWidth / 2)
       );
     }
 
@@ -514,17 +533,18 @@ async function renderCompositeFrameGif(
 
     const loadedLayers: ExtractedLayer[] = [];
 
-    // Scale factors strictly lockstep with baseImg to prevent any rounding drift or distortion
-    const scaleX = (baseImg && item.frameWidth > 0) ? (baseImg.width / item.frameWidth) : currentScale;
-    const scaleY = (baseImg && item.frameHeight > 0) ? (baseImg.height / item.frameHeight) : currentScale;
+    // Scale factor for 1x Figma coordinates is strictly currentScale (1 Figma pt = currentScale pixels).
+    // NEVER stretch by baseImg dimensions! Doing so falsely inflates layers (such as battery bar)
+    // when baseImg contains render padding or drop shadow bounds.
+    const scaleFactor = currentScale;
 
     for (const l of layersToProcess) {
       const animData = await extractAnimatedFrames(l.bytes, l.mimeType || "image/gif");
       if (animData && animData.frames.length > 0) {
-        const drawX = Math.round(l.relX * scaleX);
-        const drawY = Math.round(l.relY * scaleY);
-        const drawW = Math.round(l.relWidth * scaleX);
-        const drawH = Math.round(l.relHeight * scaleY);
+        const drawX = offsetX + Math.round(l.relX * scaleFactor);
+        const drawY = offsetY + Math.round(l.relY * scaleFactor);
+        const drawW = Math.round(l.relWidth * scaleFactor);
+        const drawH = Math.round(l.relHeight * scaleFactor);
         const totalDuration = animData.frames.reduce((s, f) => s + f.delayMs, 0) || (animData.frames.length * 100);
 
         loadedLayers.push({
@@ -569,9 +589,8 @@ async function renderCompositeFrameGif(
         const data = imgData.data;
 
         // 1. Mathematical Rounded Rectangle Mask:
-        // Force every single pixel outside the rounded rectangle / capsule to pure transparent [0, 0, 0, 0]!
-        // This completely eliminates any possibility of black corners!
-        if (cornerRadius > 0) {
+        // Apply corner rounding if canvas matches exact widget dimensions (eliminates black corners on standalone widgets)
+        if (cornerRadius > 0 && exportWidth === targetWidth && exportHeight === targetHeight) {
           for (let y = 0; y < exportHeight; y++) {
             for (let x = 0; x < exportWidth; x++) {
               if (!isInsideRoundedRect(x, y, exportWidth, exportHeight, cornerRadius)) {
@@ -637,23 +656,28 @@ async function renderCompositeFrameGif(
           const frame = singleLayer.frames[i];
           cCtx.clearRect(0, 0, exportWidth, exportHeight);
 
-          if (cornerRadius > 0) {
-            cCtx.save();
-            drawRoundedRect(cCtx, 0, 0, exportWidth, exportHeight, cornerRadius);
-            cCtx.clip();
-          } else if (item.clipsContent) {
-            cCtx.save();
-            cCtx.rect(0, 0, exportWidth, exportHeight);
-            cCtx.clip();
-          }
-
           if (baseImg) {
-            cCtx.drawImage(baseImg, 0, 0, exportWidth, exportHeight);
+            if (cornerRadius > 0 && exportWidth === targetWidth && exportHeight === targetHeight) {
+              cCtx.save();
+              drawRoundedRect(cCtx, offsetX, offsetY, targetWidth, targetHeight, cornerRadius);
+              cCtx.clip();
+              cCtx.drawImage(baseImg, 0, 0, exportWidth, exportHeight);
+              cCtx.restore();
+            } else {
+              cCtx.drawImage(baseImg, 0, 0, exportWidth, exportHeight);
+            }
           }
 
           if (singleLayer.cornerRadius && singleLayer.cornerRadius > 0) {
             cCtx.save();
-            drawRoundedRect(cCtx, singleLayer.drawX, singleLayer.drawY, singleLayer.drawW, singleLayer.drawH, Math.round(singleLayer.cornerRadius * scaleX));
+            drawRoundedRect(
+              cCtx,
+              singleLayer.drawX,
+              singleLayer.drawY,
+              singleLayer.drawW,
+              singleLayer.drawH,
+              Math.round(singleLayer.cornerRadius * scaleFactor)
+            );
             cCtx.clip();
             drawImageScaled(
               cCtx,
@@ -677,10 +701,6 @@ async function renderCompositeFrameGif(
             );
           }
 
-          if (cornerRadius > 0 || item.clipsContent) {
-            cCtx.restore();
-          }
-
           processAndWriteFrame(frame.delayMs, i === 0);
           if (onProgress) onProgress(i + 1, numFrames);
         }
@@ -696,25 +716,30 @@ async function renderCompositeFrameGif(
           const timeMs = i * stepDelay;
           cCtx.clearRect(0, 0, exportWidth, exportHeight);
 
-          if (cornerRadius > 0) {
-            cCtx.save();
-            drawRoundedRect(cCtx, 0, 0, exportWidth, exportHeight, cornerRadius);
-            cCtx.clip();
-          } else if (item.clipsContent) {
-            cCtx.save();
-            cCtx.rect(0, 0, exportWidth, exportHeight);
-            cCtx.clip();
-          }
-
           if (baseImg) {
-            cCtx.drawImage(baseImg, 0, 0, exportWidth, exportHeight);
+            if (cornerRadius > 0 && exportWidth === targetWidth && exportHeight === targetHeight) {
+              cCtx.save();
+              drawRoundedRect(cCtx, offsetX, offsetY, targetWidth, targetHeight, cornerRadius);
+              cCtx.clip();
+              cCtx.drawImage(baseImg, 0, 0, exportWidth, exportHeight);
+              cCtx.restore();
+            } else {
+              cCtx.drawImage(baseImg, 0, 0, exportWidth, exportHeight);
+            }
           }
 
           for (const layer of loadedLayers) {
             const f = getFrameAtTime(layer, timeMs);
             if (layer.cornerRadius && layer.cornerRadius > 0) {
               cCtx.save();
-              drawRoundedRect(cCtx, layer.drawX, layer.drawY, layer.drawW, layer.drawH, Math.round(layer.cornerRadius * scaleX));
+              drawRoundedRect(
+                cCtx,
+                layer.drawX,
+                layer.drawY,
+                layer.drawW,
+                layer.drawH,
+                Math.round(layer.cornerRadius * scaleFactor)
+              );
               cCtx.clip();
               drawImageScaled(
                 cCtx,
@@ -737,10 +762,6 @@ async function renderCompositeFrameGif(
                 layer.scaleMode
               );
             }
-          }
-
-          if (cornerRadius > 0 || item.clipsContent) {
-            cCtx.restore();
           }
 
           processAndWriteFrame(stepDelay, i === 0);
@@ -1412,7 +1433,11 @@ window.onmessage = (event) => {
     const callback = pendingBasePngRequests.get(msg.requestId);
     if (callback) {
       pendingBasePngRequests.delete(msg.requestId);
-      callback(msg.basePngBytes || new Uint8Array(0));
+      callback({
+        bytes: msg.basePngBytes || new Uint8Array(0),
+        offsetX: Number(msg.offsetX) || 0,
+        offsetY: Number(msg.offsetY) || 0
+      });
     }
   } else if (msg.type === "FRAMES_EXPORT_SUCCESS") {
     const btnFetch = document.getElementById("btnFetchFrames") as HTMLButtonElement;

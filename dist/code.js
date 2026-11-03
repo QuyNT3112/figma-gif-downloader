@@ -167,14 +167,25 @@
     return ancestors[ancestors.length - 1];
   }
   function getVisualStickerNode(node, container) {
-    let curr = node;
+    let curr = node.parent;
     let visualNode = node;
     while (curr && curr !== container) {
       if (curr.type === "FRAME" || curr.type === "INSTANCE" || curr.type === "COMPONENT") {
         const sNode = curr;
-        if (sNode.type === "INSTANCE" || "clipsContent" in sNode && sNode.clipsContent) {
-          visualNode = sNode;
-          break;
+        const sW = "width" in sNode ? sNode.width : 0;
+        const sH = "height" in sNode ? sNode.height : 0;
+        const nW = "width" in node ? node.width : 0;
+        const nH = "height" in node ? node.height : 0;
+        if ("clipsContent" in sNode && sNode.clipsContent) {
+          if (sW > 0 && sH > 0 && (sW <= nW + 4 || sH <= nH + 4)) {
+            visualNode = sNode;
+            break;
+          }
+        } else if (sNode.type === "INSTANCE") {
+          if (sW > 0 && sH > 0 && Math.abs(sW - nW) <= 4 && Math.abs(sH - nH) <= 4) {
+            visualNode = sNode;
+            break;
+          }
         }
       }
       curr = curr.parent;
@@ -419,6 +430,8 @@
               let stickerRadius = 0;
               if (typeof visualNode.cornerRadius === "number" && visualNode.cornerRadius > 0) {
                 stickerRadius = visualNode.cornerRadius;
+              } else if (typeof target.node.cornerRadius === "number" && target.node.cornerRadius > 0) {
+                stickerRadius = target.node.cornerRadius;
               }
               if (visualNode.absoluteBoundingBox && container.absoluteBoundingBox) {
                 relX = Math.round(visualNode.absoluteBoundingBox.x - container.absoluteBoundingBox.x);
@@ -514,6 +527,8 @@
         const gifNodeIds = Array.isArray(msg.gifNodeIds) ? msg.gifNodeIds : msg.gifNodeId ? [msg.gifNodeId] : [];
         const scale = Number(msg.scale) || 1;
         let basePngBytes = new Uint8Array(0);
+        let offsetX = 0;
+        let offsetY = 0;
         try {
           const container = figma.getNodeById(frameId);
           if (container && "exportAsync" in container) {
@@ -545,6 +560,10 @@
                 format: "PNG",
                 constraint: { type: "SCALE", value: scale }
               });
+              if (container.absoluteBoundingBox && container.absoluteRenderBounds) {
+                offsetX = Math.max(0, Math.round((container.absoluteBoundingBox.x - container.absoluteRenderBounds.x) * scale));
+                offsetY = Math.max(0, Math.round((container.absoluteBoundingBox.y - container.absoluteRenderBounds.y) * scale));
+              }
             } catch (e) {
               console.warn("Base PNG export failed with opacity 0, retrying direct:", e);
               basePngBytes = await container.exportAsync({
@@ -573,7 +592,9 @@
           type: "BASE_PNG_RESULT",
           requestId,
           frameId,
-          basePngBytes
+          basePngBytes,
+          offsetX,
+          offsetY
         });
       } else if (msg.type === "FOCUS_NODE") {
         const node = figma.getNodeById(msg.nodeId);

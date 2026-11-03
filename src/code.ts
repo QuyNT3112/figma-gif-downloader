@@ -257,16 +257,31 @@ function findWidgetContainer(node: SceneNode, rootSelection?: readonly SceneNode
 
 // Find the closest visual boundary node for a sticker (e.g. InstanceNode or Frame with clipsContent: true)
 function getVisualStickerNode(node: SceneNode, container: SceneNode): SceneNode {
-  let curr: BaseNode | null = node;
+  let curr: BaseNode | null = node.parent;
   let visualNode: SceneNode = node;
 
   while (curr && curr !== container) {
     if (curr.type === "FRAME" || curr.type === "INSTANCE" || curr.type === "COMPONENT") {
       const sNode = curr as SceneNode;
-      // If sNode is an InstanceNode or a Frame with clipsContent, this is the visual sticker container!
-      if (sNode.type === "INSTANCE" || ("clipsContent" in sNode && (sNode as FrameNode).clipsContent)) {
-        visualNode = sNode;
-        break; // Stop at closest (innermost) clipping boundary / component instance!
+      const sW = "width" in sNode ? (sNode as any).width : 0;
+      const sH = "height" in sNode ? (sNode as any).height : 0;
+      const nW = "width" in node ? (node as any).width : 0;
+      const nH = "height" in node ? (node as any).height : 0;
+
+      // If sNode is a Frame with clipsContent:
+      // Only treat sNode as the visual boundary if it actively crops the node (smaller or equal to node).
+      // If sNode is larger than node (e.g. parent container, AutoLayout card/row), DO NOT expand node to parent!
+      if ("clipsContent" in sNode && (sNode as FrameNode).clipsContent) {
+        if (sW > 0 && sH > 0 && (sW <= nW + 4 || sH <= nH + 4)) {
+          visualNode = sNode;
+          break; // Stop at closest (innermost) clipping boundary!
+        }
+      } else if (sNode.type === "INSTANCE") {
+        // An instance is only the visual sticker wrapper if it tightly wraps the image node
+        if (sW > 0 && sH > 0 && Math.abs(sW - nW) <= 4 && Math.abs(sH - nH) <= 4) {
+          visualNode = sNode;
+          break;
+        }
       }
     }
     curr = curr.parent;
@@ -597,6 +612,8 @@ figma.ui.onmessage = async (msg) => {
 
             if (typeof (visualNode as any).cornerRadius === "number" && (visualNode as any).cornerRadius > 0) {
               stickerRadius = (visualNode as any).cornerRadius;
+            } else if (typeof (target.node as any).cornerRadius === "number" && (target.node as any).cornerRadius > 0) {
+              stickerRadius = (target.node as any).cornerRadius;
             }
 
             if (visualNode.absoluteBoundingBox && container.absoluteBoundingBox) {
@@ -707,6 +724,8 @@ figma.ui.onmessage = async (msg) => {
       const scale = Number(msg.scale) || 1;
 
       let basePngBytes = new Uint8Array(0);
+      let offsetX = 0;
+      let offsetY = 0;
 
       try {
         const container = figma.getNodeById(frameId) as any;
@@ -743,6 +762,12 @@ figma.ui.onmessage = async (msg) => {
               format: "PNG",
               constraint: { type: "SCALE", value: scale }
             });
+
+            // Calculate precise offset of container within rendered bounds if Figma exported effects/padding
+            if (container.absoluteBoundingBox && container.absoluteRenderBounds) {
+              offsetX = Math.max(0, Math.round((container.absoluteBoundingBox.x - container.absoluteRenderBounds.x) * scale));
+              offsetY = Math.max(0, Math.round((container.absoluteBoundingBox.y - container.absoluteRenderBounds.y) * scale));
+            }
           } catch (e) {
             console.warn("Base PNG export failed with opacity 0, retrying direct:", e);
             basePngBytes = await container.exportAsync({
@@ -770,7 +795,9 @@ figma.ui.onmessage = async (msg) => {
         type: "BASE_PNG_RESULT",
         requestId,
         frameId,
-        basePngBytes
+        basePngBytes,
+        offsetX,
+        offsetY
       });
     } else if (msg.type === "FOCUS_NODE") {
       const node = figma.getNodeById(msg.nodeId);

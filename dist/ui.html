@@ -4904,12 +4904,12 @@
       const timeout = setTimeout(() => {
         if (pendingBasePngRequests.has(requestId)) {
           pendingBasePngRequests.delete(requestId);
-          resolve(new Uint8Array(0));
+          resolve({ bytes: new Uint8Array(0), offsetX: 0, offsetY: 0 });
         }
       }, 15e3);
-      pendingBasePngRequests.set(requestId, (bytes) => {
+      pendingBasePngRequests.set(requestId, (res) => {
         clearTimeout(timeout);
-        resolve(bytes);
+        resolve(res);
       });
       postToFigma({
         type: "GET_BASE_PNG",
@@ -5132,7 +5132,8 @@
         if (l.nodeId && !layerIds.includes(l.nodeId)) layerIds.push(l.nodeId);
       }
       if (layerIds.length === 0 && item.gifNodeId) layerIds.push(item.gifNodeId);
-      const basePngBytes = await requestBasePng(item.frameId, layerIds, currentScale);
+      const basePngResult = await requestBasePng(item.frameId, layerIds, currentScale);
+      const basePngBytes = basePngResult.bytes;
       let baseImg = null;
       if (basePngBytes && basePngBytes.length > 0) {
         const baseBlob = new Blob([basePngBytes], { type: "image/png" });
@@ -5143,32 +5144,41 @@
           URL.revokeObjectURL(url);
         }
       }
-      let exportWidth = Math.max(1, Math.round(item.frameWidth * currentScale));
-      let exportHeight = Math.max(1, Math.round(item.frameHeight * currentScale));
+      const targetWidth = Math.max(1, Math.round(item.frameWidth * currentScale));
+      const targetHeight = Math.max(1, Math.round(item.frameHeight * currentScale));
+      let exportWidth = targetWidth;
+      let exportHeight = targetHeight;
+      let offsetX = basePngResult.offsetX || 0;
+      let offsetY = basePngResult.offsetY || 0;
       if (baseImg && baseImg.width > 0 && baseImg.height > 0) {
         exportWidth = baseImg.width;
         exportHeight = baseImg.height;
+        if (offsetX === 0 && exportWidth > targetWidth) {
+          offsetX = Math.max(0, Math.round((exportWidth - targetWidth) / 2));
+        }
+        if (offsetY === 0 && exportHeight > targetHeight) {
+          offsetY = Math.max(0, Math.round((exportHeight - targetHeight) / 2));
+        }
       }
       let cornerRadius = 0;
       if (item.isCapsule) {
-        cornerRadius = Math.round(exportHeight / 2);
+        cornerRadius = Math.round(targetHeight / 2);
       } else if (item.cornerRadius && item.cornerRadius > 0) {
         cornerRadius = Math.min(
           Math.round(item.cornerRadius * currentScale),
-          Math.floor(exportHeight / 2),
-          Math.floor(exportWidth / 2)
+          Math.floor(targetHeight / 2),
+          Math.floor(targetWidth / 2)
         );
       }
       const loadedLayers = [];
-      const scaleX = baseImg && item.frameWidth > 0 ? baseImg.width / item.frameWidth : currentScale;
-      const scaleY = baseImg && item.frameHeight > 0 ? baseImg.height / item.frameHeight : currentScale;
+      const scaleFactor = currentScale;
       for (const l of layersToProcess) {
         const animData = await extractAnimatedFrames(l.bytes, l.mimeType || "image/gif");
         if (animData && animData.frames.length > 0) {
-          const drawX = Math.round(l.relX * scaleX);
-          const drawY = Math.round(l.relY * scaleY);
-          const drawW = Math.round(l.relWidth * scaleX);
-          const drawH = Math.round(l.relHeight * scaleY);
+          const drawX = offsetX + Math.round(l.relX * scaleFactor);
+          const drawY = offsetY + Math.round(l.relY * scaleFactor);
+          const drawW = Math.round(l.relWidth * scaleFactor);
+          const drawH = Math.round(l.relHeight * scaleFactor);
           const totalDuration = animData.frames.reduce((s, f) => s + f.delayMs, 0) || animData.frames.length * 100;
           loadedLayers.push({
             nodeId: l.nodeId,
@@ -5195,7 +5205,7 @@
         }, processAndWriteFrame2 = function(delayMs, isFirst) {
           const imgData = cCtx.getImageData(0, 0, exportWidth, exportHeight);
           const data = imgData.data;
-          if (cornerRadius > 0) {
+          if (cornerRadius > 0 && exportWidth === targetWidth && exportHeight === targetHeight) {
             for (let y = 0; y < exportHeight; y++) {
               for (let x = 0; x < exportWidth; x++) {
                 if (!isInsideRoundedRect(x, y, exportWidth, exportHeight, cornerRadius)) {
@@ -5261,21 +5271,27 @@
           for (let i = 0; i < numFrames; i++) {
             const frame = singleLayer.frames[i];
             cCtx.clearRect(0, 0, exportWidth, exportHeight);
-            if (cornerRadius > 0) {
-              cCtx.save();
-              drawRoundedRect(cCtx, 0, 0, exportWidth, exportHeight, cornerRadius);
-              cCtx.clip();
-            } else if (item.clipsContent) {
-              cCtx.save();
-              cCtx.rect(0, 0, exportWidth, exportHeight);
-              cCtx.clip();
-            }
             if (baseImg) {
-              cCtx.drawImage(baseImg, 0, 0, exportWidth, exportHeight);
+              if (cornerRadius > 0 && exportWidth === targetWidth && exportHeight === targetHeight) {
+                cCtx.save();
+                drawRoundedRect(cCtx, offsetX, offsetY, targetWidth, targetHeight, cornerRadius);
+                cCtx.clip();
+                cCtx.drawImage(baseImg, 0, 0, exportWidth, exportHeight);
+                cCtx.restore();
+              } else {
+                cCtx.drawImage(baseImg, 0, 0, exportWidth, exportHeight);
+              }
             }
             if (singleLayer.cornerRadius && singleLayer.cornerRadius > 0) {
               cCtx.save();
-              drawRoundedRect(cCtx, singleLayer.drawX, singleLayer.drawY, singleLayer.drawW, singleLayer.drawH, Math.round(singleLayer.cornerRadius * scaleX));
+              drawRoundedRect(
+                cCtx,
+                singleLayer.drawX,
+                singleLayer.drawY,
+                singleLayer.drawW,
+                singleLayer.drawH,
+                Math.round(singleLayer.cornerRadius * scaleFactor)
+              );
               cCtx.clip();
               drawImageScaled(
                 cCtx,
@@ -5298,9 +5314,6 @@
                 singleLayer.scaleMode
               );
             }
-            if (cornerRadius > 0 || item.clipsContent) {
-              cCtx.restore();
-            }
             processAndWriteFrame2(frame.delayMs, i === 0);
             if (onProgress) onProgress(i + 1, numFrames);
           }
@@ -5313,23 +5326,29 @@
           for (let i = 0; i < numMasterFrames; i++) {
             const timeMs = i * stepDelay;
             cCtx.clearRect(0, 0, exportWidth, exportHeight);
-            if (cornerRadius > 0) {
-              cCtx.save();
-              drawRoundedRect(cCtx, 0, 0, exportWidth, exportHeight, cornerRadius);
-              cCtx.clip();
-            } else if (item.clipsContent) {
-              cCtx.save();
-              cCtx.rect(0, 0, exportWidth, exportHeight);
-              cCtx.clip();
-            }
             if (baseImg) {
-              cCtx.drawImage(baseImg, 0, 0, exportWidth, exportHeight);
+              if (cornerRadius > 0 && exportWidth === targetWidth && exportHeight === targetHeight) {
+                cCtx.save();
+                drawRoundedRect(cCtx, offsetX, offsetY, targetWidth, targetHeight, cornerRadius);
+                cCtx.clip();
+                cCtx.drawImage(baseImg, 0, 0, exportWidth, exportHeight);
+                cCtx.restore();
+              } else {
+                cCtx.drawImage(baseImg, 0, 0, exportWidth, exportHeight);
+              }
             }
             for (const layer of loadedLayers) {
               const f = getFrameAtTime2(layer, timeMs);
               if (layer.cornerRadius && layer.cornerRadius > 0) {
                 cCtx.save();
-                drawRoundedRect(cCtx, layer.drawX, layer.drawY, layer.drawW, layer.drawH, Math.round(layer.cornerRadius * scaleX));
+                drawRoundedRect(
+                  cCtx,
+                  layer.drawX,
+                  layer.drawY,
+                  layer.drawW,
+                  layer.drawH,
+                  Math.round(layer.cornerRadius * scaleFactor)
+                );
                 cCtx.clip();
                 drawImageScaled(
                   cCtx,
@@ -5352,9 +5371,6 @@
                   layer.scaleMode
                 );
               }
-            }
-            if (cornerRadius > 0 || item.clipsContent) {
-              cCtx.restore();
             }
             processAndWriteFrame2(stepDelay, i === 0);
             if (onProgress) onProgress(i + 1, numMasterFrames);
@@ -5912,7 +5928,11 @@
       const callback = pendingBasePngRequests.get(msg.requestId);
       if (callback) {
         pendingBasePngRequests.delete(msg.requestId);
-        callback(msg.basePngBytes || new Uint8Array(0));
+        callback({
+          bytes: msg.basePngBytes || new Uint8Array(0),
+          offsetX: Number(msg.offsetX) || 0,
+          offsetY: Number(msg.offsetY) || 0
+        });
       }
     } else if (msg.type === "FRAMES_EXPORT_SUCCESS") {
       const btnFetch = document.getElementById("btnFetchFrames");
