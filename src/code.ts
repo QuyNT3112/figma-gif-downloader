@@ -272,7 +272,7 @@ function getVisualStickerNode(node: SceneNode, container: SceneNode): SceneNode 
       // Only treat sNode as the visual boundary if it actively crops the node (smaller or equal to node).
       // If sNode is larger than node (e.g. parent container, AutoLayout card/row), DO NOT expand node to parent!
       if ("clipsContent" in sNode && (sNode as FrameNode).clipsContent) {
-        if (sW > 0 && sH > 0 && (sW <= nW + 4 || sH <= nH + 4)) {
+        if (sW > 0 && sH > 0 && (sW <= nW + 4 && sH <= nH + 4)) {
           visualNode = sNode;
           break; // Stop at closest (innermost) clipping boundary!
         }
@@ -287,6 +287,46 @@ function getVisualStickerNode(node: SceneNode, container: SceneNode): SceneNode 
     curr = curr.parent;
   }
   return visualNode;
+}
+
+export interface ClipBoxInfo {
+  absX: number;
+  absY: number;
+  absWidth: number;
+  absHeight: number;
+  cornerRadius: number;
+}
+
+// Find any intermediate clipping frame between the node and container (e.g. pill capsule inside a Group)
+function findInnerClippingAncestor(node: SceneNode, container: SceneNode): ClipBoxInfo | undefined {
+  let curr: BaseNode | null = node.parent;
+  while (curr && curr !== container) {
+    if ("clipsContent" in curr && (curr as FrameNode).clipsContent) {
+      const frame = curr as FrameNode;
+      if (frame.absoluteBoundingBox) {
+        let radius = 0;
+        if (typeof (frame as any).cornerRadius === "number" && (frame as any).cornerRadius > 0) {
+          radius = (frame as any).cornerRadius;
+        } else if (typeof (frame as any).topLeftRadius === "number" && (frame as any).topLeftRadius > 0) {
+          radius = Math.max(
+            (frame as any).topLeftRadius || 0,
+            (frame as any).topRightRadius || 0,
+            (frame as any).bottomLeftRadius || 0,
+            (frame as any).bottomRightRadius || 0
+          );
+        }
+        return {
+          absX: frame.absoluteBoundingBox.x,
+          absY: frame.absoluteBoundingBox.y,
+          absWidth: Math.max(1, Math.round(frame.absoluteBoundingBox.width)),
+          absHeight: Math.max(1, Math.round(frame.absoluteBoundingBox.height)),
+          cornerRadius: radius
+        };
+      }
+    }
+    curr = curr.parent;
+  }
+  return undefined;
 }
 
 interface TargetItem {
@@ -399,6 +439,11 @@ export interface AnimatedLayerInfo {
   relY: number;
   relWidth: number;
   relHeight: number;
+  absX: number;
+  absY: number;
+  absWidth: number;
+  absHeight: number;
+  clipBox?: ClipBoxInfo;
   cornerRadius?: number;
   format: string;
   mimeType: string;
@@ -624,16 +669,17 @@ figma.ui.onmessage = async (msg) => {
               stickerRadius = (target.node as any).cornerRadius;
             }
 
-            if (visualNode.absoluteBoundingBox && container.absoluteBoundingBox) {
-              relX = Math.round(visualNode.absoluteBoundingBox.x - container.absoluteBoundingBox.x);
-              relY = Math.round(visualNode.absoluteBoundingBox.y - container.absoluteBoundingBox.y);
-              relWidth = Math.max(1, Math.round(visualNode.absoluteBoundingBox.width));
-              relHeight = Math.max(1, Math.round(visualNode.absoluteBoundingBox.height));
-            } else if (target.node.absoluteBoundingBox && container.absoluteBoundingBox) {
-              relX = Math.round(target.node.absoluteBoundingBox.x - container.absoluteBoundingBox.x);
-              relY = Math.round(target.node.absoluteBoundingBox.y - container.absoluteBoundingBox.y);
-              relWidth = Math.max(1, Math.round(target.node.absoluteBoundingBox.width));
-              relHeight = Math.max(1, Math.round(target.node.absoluteBoundingBox.height));
+            const absBox = visualNode.absoluteBoundingBox || target.node.absoluteBoundingBox;
+            const absX = absBox ? absBox.x : 0;
+            const absY = absBox ? absBox.y : 0;
+            const absWidth = absBox ? Math.max(1, Math.round(absBox.width)) : relWidth;
+            const absHeight = absBox ? Math.max(1, Math.round(absBox.height)) : relHeight;
+
+            if (absBox && container.absoluteBoundingBox) {
+              relX = Math.round(absBox.x - container.absoluteBoundingBox.x);
+              relY = Math.round(absBox.y - container.absoluteBoundingBox.y);
+              relWidth = absWidth;
+              relHeight = absHeight;
             } else {
               try {
                 const cX = visualNode.absoluteTransform[0][2];
@@ -645,6 +691,8 @@ figma.ui.onmessage = async (msg) => {
               } catch (err) {}
             }
 
+            const clipBox = findInnerClippingAncestor(target.node, container);
+
             layers.push({
               nodeId: target.node.id,
               visualNodeId: visualNode.id,
@@ -654,6 +702,11 @@ figma.ui.onmessage = async (msg) => {
               relY,
               relWidth,
               relHeight,
+              absX,
+              absY,
+              absWidth,
+              absHeight,
+              clipBox,
               cornerRadius: stickerRadius,
               format: formatInfo.format,
               mimeType: formatInfo.mimeType,
@@ -717,6 +770,11 @@ figma.ui.onmessage = async (msg) => {
           relY: primary.relY,
           relWidth: primary.relWidth,
           relHeight: primary.relHeight,
+          absX: primary.absX,
+          absY: primary.absY,
+          absWidth: primary.absWidth,
+          absHeight: primary.absHeight,
+          clipBox: primary.clipBox,
           stickerCornerRadius: primary.cornerRadius,
           scaleMode: primary.scaleMode || "FILL",
           format: animLayers.length > 1 ? `GIF (${animLayers.length} động)` : primary.format,
@@ -744,6 +802,8 @@ figma.ui.onmessage = async (msg) => {
       const scale = Number(msg.scale) || 1;
 
       let basePngBytes = new Uint8Array(0);
+      let exportOriginX = 0;
+      let exportOriginY = 0;
       let offsetX = 0;
       let offsetY = 0;
 
@@ -783,10 +843,18 @@ figma.ui.onmessage = async (msg) => {
               constraint: { type: "SCALE", value: scale }
             });
 
+            // Exact page-space origin of the exported image
+            const exportBounds = (container.clipsContent && container.absoluteBoundingBox)
+              ? container.absoluteBoundingBox
+              : (container.absoluteRenderBounds || container.absoluteBoundingBox);
+
+            exportOriginX = exportBounds ? exportBounds.x : (container.absoluteBoundingBox?.x || 0);
+            exportOriginY = exportBounds ? exportBounds.y : (container.absoluteBoundingBox?.y || 0);
+
             // Calculate precise offset of container within rendered bounds if Figma exported effects/padding
-            if (container.absoluteBoundingBox && container.absoluteRenderBounds) {
-              offsetX = Math.max(0, Math.round((container.absoluteBoundingBox.x - container.absoluteRenderBounds.x) * scale));
-              offsetY = Math.max(0, Math.round((container.absoluteBoundingBox.y - container.absoluteRenderBounds.y) * scale));
+            if (container.absoluteBoundingBox) {
+              offsetX = Math.max(0, Math.round((container.absoluteBoundingBox.x - exportOriginX) * scale));
+              offsetY = Math.max(0, Math.round((container.absoluteBoundingBox.y - exportOriginY) * scale));
             }
           } catch (e) {
             console.warn("Base PNG export failed with opacity 0, retrying direct:", e);
@@ -794,6 +862,15 @@ figma.ui.onmessage = async (msg) => {
               format: "PNG",
               constraint: { type: "SCALE", value: scale }
             });
+
+            const exportBounds = container.absoluteRenderBounds || container.absoluteBoundingBox;
+            exportOriginX = exportBounds ? exportBounds.x : (container.absoluteBoundingBox?.x || 0);
+            exportOriginY = exportBounds ? exportBounds.y : (container.absoluteBoundingBox?.y || 0);
+
+            if (container.absoluteBoundingBox) {
+              offsetX = Math.max(0, Math.round((container.absoluteBoundingBox.x - exportOriginX) * scale));
+              offsetY = Math.max(0, Math.round((container.absoluteBoundingBox.y - exportOriginY) * scale));
+            }
           } finally {
             if (origClipsContent !== undefined && "clipsContent" in container) {
               try {
@@ -816,6 +893,8 @@ figma.ui.onmessage = async (msg) => {
         requestId,
         frameId,
         basePngBytes,
+        exportOriginX,
+        exportOriginY,
         offsetX,
         offsetY
       });

@@ -177,7 +177,7 @@
         const nW = "width" in node ? node.width : 0;
         const nH = "height" in node ? node.height : 0;
         if ("clipsContent" in sNode && sNode.clipsContent) {
-          if (sW > 0 && sH > 0 && (sW <= nW + 4 || sH <= nH + 4)) {
+          if (sW > 0 && sH > 0 && (sW <= nW + 4 && sH <= nH + 4)) {
             visualNode = sNode;
             break;
           }
@@ -191,6 +191,36 @@
       curr = curr.parent;
     }
     return visualNode;
+  }
+  function findInnerClippingAncestor(node, container) {
+    let curr = node.parent;
+    while (curr && curr !== container) {
+      if ("clipsContent" in curr && curr.clipsContent) {
+        const frame = curr;
+        if (frame.absoluteBoundingBox) {
+          let radius = 0;
+          if (typeof frame.cornerRadius === "number" && frame.cornerRadius > 0) {
+            radius = frame.cornerRadius;
+          } else if (typeof frame.topLeftRadius === "number" && frame.topLeftRadius > 0) {
+            radius = Math.max(
+              frame.topLeftRadius || 0,
+              frame.topRightRadius || 0,
+              frame.bottomLeftRadius || 0,
+              frame.bottomRightRadius || 0
+            );
+          }
+          return {
+            absX: frame.absoluteBoundingBox.x,
+            absY: frame.absoluteBoundingBox.y,
+            absWidth: Math.max(1, Math.round(frame.absoluteBoundingBox.width)),
+            absHeight: Math.max(1, Math.round(frame.absoluteBoundingBox.height)),
+            cornerRadius: radius
+          };
+        }
+      }
+      curr = curr.parent;
+    }
+    return void 0;
   }
   function collectAllMediaFills(nodes, rootSelection) {
     const results = [];
@@ -433,16 +463,16 @@
               } else if (typeof target.node.cornerRadius === "number" && target.node.cornerRadius > 0) {
                 stickerRadius = target.node.cornerRadius;
               }
-              if (visualNode.absoluteBoundingBox && container.absoluteBoundingBox) {
-                relX = Math.round(visualNode.absoluteBoundingBox.x - container.absoluteBoundingBox.x);
-                relY = Math.round(visualNode.absoluteBoundingBox.y - container.absoluteBoundingBox.y);
-                relWidth = Math.max(1, Math.round(visualNode.absoluteBoundingBox.width));
-                relHeight = Math.max(1, Math.round(visualNode.absoluteBoundingBox.height));
-              } else if (target.node.absoluteBoundingBox && container.absoluteBoundingBox) {
-                relX = Math.round(target.node.absoluteBoundingBox.x - container.absoluteBoundingBox.x);
-                relY = Math.round(target.node.absoluteBoundingBox.y - container.absoluteBoundingBox.y);
-                relWidth = Math.max(1, Math.round(target.node.absoluteBoundingBox.width));
-                relHeight = Math.max(1, Math.round(target.node.absoluteBoundingBox.height));
+              const absBox = visualNode.absoluteBoundingBox || target.node.absoluteBoundingBox;
+              const absX = absBox ? absBox.x : 0;
+              const absY = absBox ? absBox.y : 0;
+              const absWidth = absBox ? Math.max(1, Math.round(absBox.width)) : relWidth;
+              const absHeight = absBox ? Math.max(1, Math.round(absBox.height)) : relHeight;
+              if (absBox && container.absoluteBoundingBox) {
+                relX = Math.round(absBox.x - container.absoluteBoundingBox.x);
+                relY = Math.round(absBox.y - container.absoluteBoundingBox.y);
+                relWidth = absWidth;
+                relHeight = absHeight;
               } else {
                 try {
                   const cX = visualNode.absoluteTransform[0][2];
@@ -454,6 +484,7 @@
                 } catch (err) {
                 }
               }
+              const clipBox = findInnerClippingAncestor(target.node, container);
               layers.push({
                 nodeId: target.node.id,
                 visualNodeId: visualNode.id,
@@ -463,6 +494,11 @@
                 relY,
                 relWidth,
                 relHeight,
+                absX,
+                absY,
+                absWidth,
+                absHeight,
+                clipBox,
                 cornerRadius: stickerRadius,
                 format: formatInfo.format,
                 mimeType: formatInfo.mimeType,
@@ -515,6 +551,11 @@
             relY: primary.relY,
             relWidth: primary.relWidth,
             relHeight: primary.relHeight,
+            absX: primary.absX,
+            absY: primary.absY,
+            absWidth: primary.absWidth,
+            absHeight: primary.absHeight,
+            clipBox: primary.clipBox,
             stickerCornerRadius: primary.cornerRadius,
             scaleMode: primary.scaleMode || "FILL",
             format: animLayers.length > 1 ? `GIF (${animLayers.length} \u0111\u1ED9ng)` : primary.format,
@@ -536,6 +577,8 @@
         const gifNodeIds = Array.isArray(msg.gifNodeIds) ? msg.gifNodeIds : msg.gifNodeId ? [msg.gifNodeId] : [];
         const scale = Number(msg.scale) || 1;
         let basePngBytes = new Uint8Array(0);
+        let exportOriginX = 0;
+        let exportOriginY = 0;
         let offsetX = 0;
         let offsetY = 0;
         try {
@@ -569,9 +612,12 @@
                 format: "PNG",
                 constraint: { type: "SCALE", value: scale }
               });
-              if (container.absoluteBoundingBox && container.absoluteRenderBounds) {
-                offsetX = Math.max(0, Math.round((container.absoluteBoundingBox.x - container.absoluteRenderBounds.x) * scale));
-                offsetY = Math.max(0, Math.round((container.absoluteBoundingBox.y - container.absoluteRenderBounds.y) * scale));
+              const exportBounds = container.clipsContent && container.absoluteBoundingBox ? container.absoluteBoundingBox : container.absoluteRenderBounds || container.absoluteBoundingBox;
+              exportOriginX = exportBounds ? exportBounds.x : container.absoluteBoundingBox?.x || 0;
+              exportOriginY = exportBounds ? exportBounds.y : container.absoluteBoundingBox?.y || 0;
+              if (container.absoluteBoundingBox) {
+                offsetX = Math.max(0, Math.round((container.absoluteBoundingBox.x - exportOriginX) * scale));
+                offsetY = Math.max(0, Math.round((container.absoluteBoundingBox.y - exportOriginY) * scale));
               }
             } catch (e) {
               console.warn("Base PNG export failed with opacity 0, retrying direct:", e);
@@ -579,6 +625,13 @@
                 format: "PNG",
                 constraint: { type: "SCALE", value: scale }
               });
+              const exportBounds = container.absoluteRenderBounds || container.absoluteBoundingBox;
+              exportOriginX = exportBounds ? exportBounds.x : container.absoluteBoundingBox?.x || 0;
+              exportOriginY = exportBounds ? exportBounds.y : container.absoluteBoundingBox?.y || 0;
+              if (container.absoluteBoundingBox) {
+                offsetX = Math.max(0, Math.round((container.absoluteBoundingBox.x - exportOriginX) * scale));
+                offsetY = Math.max(0, Math.round((container.absoluteBoundingBox.y - exportOriginY) * scale));
+              }
             } finally {
               if (origClipsContent !== void 0 && "clipsContent" in container) {
                 try {
@@ -602,6 +655,8 @@
           requestId,
           frameId,
           basePngBytes,
+          exportOriginX,
+          exportOriginY,
           offsetX,
           offsetY
         });
