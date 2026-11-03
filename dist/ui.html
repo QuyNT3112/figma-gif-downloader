@@ -875,7 +875,7 @@
             <span>⚙️ Chế độ xuất:</span>
             <select id="exportModeSelect" class="mode-select">
               <option value="frame" selected>🖼️ Xuất cả Frame (Toàn bộ Widget)</option>
-              <option value="raw">📦 Chỉ lấy file GIF rời</option>
+              <option value="raw">📦 Chỉ lấy file GIF rời (gồm cọc pin & sticker)</option>
             </select>
           </div>
           <div style="display: flex; align-items: center; gap: 4px;">
@@ -1023,7 +1023,7 @@
 
   <!-- Fullscreen Preview Modal -->
   <div class="modal-backdrop" id="previewModal">
-    <div class="modal-box">
+    <div class="modal-box" style="max-width: 420px; width: 95%;">
       <div class="modal-header">
         <span id="modalTitle" style="font-weight: 600; font-size: 13px;">Chi tiết hoạt ảnh</span>
         <button class="btn-icon" id="btnCloseModal">✕</button>
@@ -1032,9 +1032,23 @@
         <img id="modalImg" class="modal-img">
       </div>
       <div id="modalMeta" style="font-size: 11px; color: var(--text-muted); text-align: center;"></div>
-      <button class="btn btn-primary" id="btnModalDownload">
-        📥 Tải GIF này về máy
-      </button>
+
+      <!-- Individual Layers Section -->
+      <div id="modalLayersContainer" style="display: none; flex-direction: column; gap: 6px; width: 100%;">
+        <div style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">
+          Danh sách GIF động lẻ (gồm cọc pin & sticker):
+        </div>
+        <div id="modalLayersList" style="display: flex; flex-direction: column; gap: 5px; max-height: 120px; overflow-y: auto;"></div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 6px; width: 100%;">
+        <button class="btn btn-primary" id="btnModalDownload" style="width: 100%;">
+          🎬 Xuất cả Frame GIF
+        </button>
+        <button class="btn btn-secondary" id="btnModalDownloadRaw" style="width: 100%; display: none;">
+          📦 Tải tất cả GIF rời (ZIP)
+        </button>
+      </div>
     </div>
   </div>
 
@@ -5490,7 +5504,8 @@
       if (query) {
         const matchFrame = item.frameName.toLowerCase().includes(query);
         const matchGif = item.gifNodeName.toLowerCase().includes(query);
-        if (!matchFrame && !matchGif) return false;
+        const matchLayers = item.animatedLayers?.some((l) => l.nodeName.toLowerCase().includes(query));
+        if (!matchFrame && !matchGif && !matchLayers) return false;
       }
       if (currentTypeFilter === "animated") {
         return item.isGif || item.isAnimated;
@@ -5508,6 +5523,10 @@
     const searchInput = document.getElementById("searchInput");
     const query = (searchInput?.value || "").trim();
     const totalAnimated = allScannedItems.filter((i) => i.isGif || i.isAnimated).length;
+    const totalRawGifs = filteredItems.reduce(
+      (acc, item) => acc + (item.animatedLayers && item.animatedLayers.length > 0 ? item.animatedLayers.length : 1),
+      0
+    );
     if (statsLabel) {
       if (filteredItems.length === 0) {
         if (allScannedItems.length > 0) {
@@ -5526,12 +5545,16 @@
           statsLabel.innerText = "Kh\xF4ng t\xECm th\u1EA5y layer n\xE0o ch\u1EE9a \u1EA3nh ho\u1EB7c GIF.";
         }
       } else {
-        statsLabel.innerText = `T\xECm th\u1EA5y ${filteredItems.length} Frame widget (${totalAnimated} \u1EA3nh \u0111\u1ED9ng/GIF)`;
+        if (currentExportMode === "raw") {
+          statsLabel.innerText = `T\xECm th\u1EA5y ${filteredItems.length} Frame (${totalRawGifs} GIF \u0111\u1ED9ng l\u1EBB g\u1ED3m c\u1ECDc pin & sticker)`;
+        } else {
+          statsLabel.innerText = `T\xECm th\u1EA5y ${filteredItems.length} Frame widget (${totalAnimated} \u1EA3nh \u0111\u1ED9ng/GIF)`;
+        }
       }
     }
     if (btnDownloadZip) {
       btnDownloadZip.disabled = filteredItems.length === 0;
-      btnDownloadZip.innerText = currentExportMode === "frame" ? `\u{1F4E6} Xu\u1EA5t t\u1EA5t c\u1EA3 (${filteredItems.length}) Frame (ZIP)` : `\u{1F4E6} T\u1EA3i t\u1EA5t c\u1EA3 (${filteredItems.length}) file GIF r\u1EDDi (ZIP)`;
+      btnDownloadZip.innerText = currentExportMode === "frame" ? `\u{1F4E6} Xu\u1EA5t t\u1EA5t c\u1EA3 (${filteredItems.length}) Frame (ZIP)` : `\u{1F4E6} T\u1EA3i t\u1EA5t c\u1EA3 (${totalRawGifs}) file GIF r\u1EDDi (ZIP)`;
     }
   }
   function renderCards(items) {
@@ -5574,8 +5597,13 @@
       const isAnim = item.isGif || item.isAnimated;
       const formatBadge = isAnim ? `<span class="pill" style="background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3);">\u2728 ${item.format.includes("\u0110\u1ED9ng") ? item.format : item.format + " \u0110\u1ED8NG"}</span>` : `<span class="pill" style="background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3);">${item.format}</span>`;
       const forceAnimBtn = !isAnim ? `<button class="btn btn-secondary btn-force-anim" style="padding: 2px 7px; font-size: 10px; margin-top: 2px;" title="Th\u1EED ph\xE2n t\xEDch s\xE2u l\u1EA1i ho\u1EA1t \u1EA3nh">\u26A1 \xC9p nh\u1EADn GIF</button>` : "";
+      const layersCount = item.animatedLayers && item.animatedLayers.length > 0 ? item.animatedLayers.length : 1;
+      const totalLayersBytes = item.animatedLayers && item.animatedLayers.length > 0 ? item.animatedLayers.reduce((s, l) => s + (l.bytes?.length || 0), 0) : item.gifBytes.length;
+      const rawButtonText = layersCount > 1 ? `\u{1F4E6} L\u1EA5y ${layersCount} GIF r\u1EDDi` : `\u{1F4E6} L\u1EA5y GIF r\u1EDDi`;
+      const rawButtonTitle = layersCount > 1 ? `T\u1EA3i tr\u1ECDn b\u1ED9 ${layersCount} GIF r\u1EDDi c\u1EE7a widget n\xE0y (g\u1ED3m c\u1EA3 c\u1ECDc pin & sticker)` : `T\u1EA3i file \u1EA3nh/GIF n\xE0y`;
+      const layerNamesDisplay = item.animatedLayers && item.animatedLayers.length > 1 ? item.animatedLayers.map((l) => l.nodeName).join(", ") : item.gifNodeName;
       card.innerHTML = `
-      <div class="preview-container" id="preview_${item.id}" title="B\u1EA5m \u0111\u1EC3 xem k\xEDch th\u01B0\u1EDBc l\u1EDBn">
+      <div class="preview-container" id="preview_${item.id}" title="B\u1EA5m \u0111\u1EC3 xem chi ti\u1EBFt & t\u1EA3i c\xE1c GIF l\u1EBB">
         <img class="preview-img" id="img_${item.id}" src="${item.rawGifBlobUrl}" alt="${item.frameName}">
       </div>
       <div class="card-info">
@@ -5584,12 +5612,12 @@
           <span class="card-title" title="${item.frameName}">${item.frameName}</span>
           ${formatBadge}
         </div>
-        <div class="card-subtitle" title="Layer: ${item.gifNodeName}">
-          Layer: ${item.gifNodeName}
+        <div class="card-subtitle" title="C\xE1c layer: ${layerNamesDisplay}">
+          Layer: ${layerNamesDisplay}
         </div>
         <div class="card-meta">
           <span class="pill pill-size">${item.frameWidth * currentScale} \xD7 ${item.frameHeight * currentScale} px (HD)</span>
-          <span class="pill pill-size">${formatBytes(item.gifBytes.length)}</span>
+          <span class="pill pill-size">${layersCount > 1 ? `${layersCount} GIF (${formatBytes(totalLayersBytes)})` : formatBytes(totalLayersBytes)}</span>
         </div>
       </div>
       <div class="card-actions">
@@ -5597,15 +5625,15 @@
           <button class="btn-icon btn-locate" title="Chuy\u1EC3n \u0111\u1EBFn Frame n\xE0y tr\xEAn Canvas">
             \u{1F3AF}
           </button>
-          <button class="btn-icon btn-preview" title="Xem tr\u01B0\u1EDBc ho\u1EA1t \u1EA3nh l\u1EDBn">
+          <button class="btn-icon btn-preview" title="Xem tr\u01B0\u1EDBc ho\u1EA1t \u1EA3nh l\u1EDBn & c\xE1c layer GIF l\u1EBB">
             \u{1F441}\uFE0F
           </button>
         </div>
         <button class="btn btn-primary btn-dl-frame" style="padding: 5px 9px; font-size: 11px;">
           \u{1F3AC} Xu\u1EA5t c\u1EA3 Frame
         </button>
-        <button class="btn btn-secondary btn-dl-raw" style="padding: 3px 8px; font-size: 10px; margin-top: -2px;">
-          \u{1F4E6} L\u1EA5y GIF r\u1EDDi
+        <button class="btn btn-secondary btn-dl-raw" style="padding: 3px 8px; font-size: 10px; margin-top: -2px;" title="${rawButtonTitle}">
+          ${rawButtonText}
         </button>
         ${forceAnimBtn}
       </div>
@@ -5660,13 +5688,55 @@
           btn.innerText = "\u{1F3AC} Xu\u1EA5t c\u1EA3 Frame";
         }
       });
-      card.querySelector(".btn-dl-raw")?.addEventListener("click", () => {
-        const isAnim2 = item.isGif || item.isAnimated;
-        const ext = isAnim2 ? "gif" : item.format.toLowerCase().includes("webp") ? "webp" : "png";
-        const mime = isAnim2 ? "image/gif" : item.mimeType || "image/png";
-        const blob = new Blob([item.gifBytes], { type: mime });
-        triggerDownload(blob, `${sanitizeFilename(item.gifNodeName || item.frameName)}.${ext}`);
-        showToast(`\u0110\xE3 t\u1EA3i file \u1EA3nh: ${item.gifNodeName}.${ext}`);
+      card.querySelector(".btn-dl-raw")?.addEventListener("click", async () => {
+        const layers = item.animatedLayers && item.animatedLayers.length > 0 ? item.animatedLayers : [{
+          nodeName: item.gifNodeName,
+          bytes: item.gifBytes,
+          isAnimated: item.isGif || item.isAnimated,
+          format: item.format,
+          mimeType: item.mimeType
+        }];
+        if (layers.length === 1) {
+          const l = layers[0];
+          const isAnim2 = l.isAnimated;
+          const ext = isAnim2 ? "gif" : l.format?.toLowerCase().includes("webp") ? "webp" : "png";
+          const mime = isAnim2 ? "image/gif" : l.mimeType || "image/png";
+          const blob = new Blob([l.bytes], { type: mime });
+          triggerDownload(blob, `${sanitizeFilename(item.frameName)} - ${sanitizeFilename(l.nodeName || "sticker")}.${ext}`);
+          showToast(`\u0110\xE3 t\u1EA3i file GIF: ${l.nodeName || item.frameName}.${ext}`);
+        } else {
+          const btnRaw = card.querySelector(".btn-dl-raw");
+          const origText = btnRaw.innerText;
+          btnRaw.disabled = true;
+          btnRaw.innerText = "\u23F3 \u0110ang n\xE9n...";
+          try {
+            const zip = new import_jszip.default();
+            const usedNames = /* @__PURE__ */ new Set();
+            for (let idx = 0; idx < layers.length; idx++) {
+              const l = layers[idx];
+              const isAnim2 = l.isAnimated;
+              const ext = isAnim2 ? "gif" : l.format?.toLowerCase().includes("webp") ? "webp" : "png";
+              const cleanLayer = sanitizeFilename(l.nodeName || `layer_${idx + 1}`);
+              const cleanFrame = sanitizeFilename(item.frameName);
+              let fileName = `${cleanFrame} - ${cleanLayer}.${ext}`;
+              let count = 1;
+              while (usedNames.has(fileName.toLowerCase())) {
+                count++;
+                fileName = `${cleanFrame} - ${cleanLayer}_${count}.${ext}`;
+              }
+              usedNames.add(fileName.toLowerCase());
+              zip.file(fileName, l.bytes);
+            }
+            const zipBlob = await zip.generateAsync({ type: "blob" });
+            triggerDownload(zipBlob, `${sanitizeFilename(item.frameName)}-cac-gif-le.zip`);
+            showToast(`\u0110\xE3 t\u1EA3i ${layers.length} GIF r\u1EDDi c\u1EE7a Frame "${item.frameName}" (g\u1ED3m c\u1ECDc pin & sticker)!`);
+          } catch (err) {
+            showToast("L\u1ED7i khi t\u1EA3i GIF r\u1EDDi: " + err.message);
+          } finally {
+            btnRaw.disabled = false;
+            btnRaw.innerText = origText;
+          }
+        }
       });
       container.appendChild(card);
     });
@@ -5675,6 +5745,7 @@
     const modal = document.getElementById("previewModal");
     const btnClose = document.getElementById("btnCloseModal");
     const btnDownload = document.getElementById("btnModalDownload");
+    const btnDownloadRaw = document.getElementById("btnModalDownloadRaw");
     btnClose?.addEventListener("click", () => {
       modal?.classList.remove("active");
     });
@@ -5694,8 +5765,48 @@
         } catch (err) {
           showToast("L\u1ED7i xu\u1EA5t: " + err.message);
         } finally {
-          btnDownload.innerText = "\u{1F3AC} Xu\u1EA5t Frame GIF";
+          btnDownload.innerText = "\u{1F3AC} Xu\u1EA5t c\u1EA3 Frame GIF";
         }
+      }
+    });
+    btnDownloadRaw?.addEventListener("click", async () => {
+      if (!activeModalItem) return;
+      const layers = activeModalItem.animatedLayers && activeModalItem.animatedLayers.length > 0 ? activeModalItem.animatedLayers : [{
+        nodeName: activeModalItem.gifNodeName,
+        bytes: activeModalItem.gifBytes,
+        isAnimated: activeModalItem.isGif || activeModalItem.isAnimated,
+        format: activeModalItem.format,
+        mimeType: activeModalItem.mimeType
+      }];
+      if (layers.length === 1) {
+        const l = layers[0];
+        const isAnim = l.isAnimated;
+        const ext = isAnim ? "gif" : l.format?.toLowerCase().includes("webp") ? "webp" : "png";
+        const mime = isAnim ? "image/gif" : l.mimeType || "image/png";
+        const blob = new Blob([l.bytes], { type: mime });
+        triggerDownload(blob, `${sanitizeFilename(activeModalItem.frameName)} - ${sanitizeFilename(l.nodeName)}.${ext}`);
+        showToast(`\u0110\xE3 t\u1EA3i: ${l.nodeName}.${ext}`);
+      } else {
+        const zip = new import_jszip.default();
+        const used = /* @__PURE__ */ new Set();
+        for (let idx = 0; idx < layers.length; idx++) {
+          const l = layers[idx];
+          const isAnim = l.isAnimated;
+          const ext = isAnim ? "gif" : l.format?.toLowerCase().includes("webp") ? "webp" : "png";
+          const cleanLayer = sanitizeFilename(l.nodeName || `layer_${idx + 1}`);
+          const cleanFrame = sanitizeFilename(activeModalItem.frameName);
+          let fileName = `${cleanFrame} - ${cleanLayer}.${ext}`;
+          let count = 1;
+          while (used.has(fileName.toLowerCase())) {
+            count++;
+            fileName = `${cleanFrame} - ${cleanLayer}_${count}.${ext}`;
+          }
+          used.add(fileName.toLowerCase());
+          zip.file(fileName, l.bytes);
+        }
+        const zipBlob = await zip.generateAsync({ type: "blob" });
+        triggerDownload(zipBlob, `${sanitizeFilename(activeModalItem.frameName)}-cac-gif-le.zip`);
+        showToast(`\u0110\xE3 t\u1EA3i ${layers.length} GIF r\u1EDDi c\u1EE7a Frame "${activeModalItem.frameName}"!`);
       }
     });
   }
@@ -5705,12 +5816,60 @@
     const modalTitle = document.getElementById("modalTitle");
     const modalImg = document.getElementById("modalImg");
     const modalMeta = document.getElementById("modalMeta");
+    const modalLayersContainer = document.getElementById("modalLayersContainer");
+    const modalLayersList = document.getElementById("modalLayersList");
+    const btnModalDownloadRaw = document.getElementById("btnModalDownloadRaw");
     if (modalTitle) modalTitle.innerText = `Xem tr\u01B0\u1EDBc: ${item.frameName}`;
     if (modalImg) {
       modalImg.src = item.renderedFrameBlobUrl || item.rawGifBlobUrl || "";
     }
     if (modalMeta) {
-      modalMeta.innerText = `K\xEDch th\u01B0\u1EDBc: ${item.frameWidth * currentScale} \xD7 ${item.frameHeight * currentScale} px | Layer: ${item.gifNodeName} (${item.format})`;
+      modalMeta.innerText = `K\xEDch th\u01B0\u1EDBc: ${item.frameWidth * currentScale} \xD7 ${item.frameHeight * currentScale} px | Frame: ${item.frameName}`;
+    }
+    const layers = item.animatedLayers && item.animatedLayers.length > 0 ? item.animatedLayers : [{
+      nodeName: item.gifNodeName,
+      bytes: item.gifBytes,
+      isAnimated: item.isGif || item.isAnimated,
+      format: item.format,
+      mimeType: item.mimeType
+    }];
+    if (modalLayersContainer && modalLayersList) {
+      if (layers.length > 1) {
+        modalLayersContainer.style.display = "flex";
+        modalLayersList.innerHTML = "";
+        layers.forEach((l, idx) => {
+          const isPin = /pin|battery|charg|cọc/i.test(l.nodeName);
+          const icon = isPin ? "\u{1F50B}" : "\u2728";
+          const row = document.createElement("div");
+          row.style.cssText = "display: flex; align-items: center; justify-content: space-between; background: var(--bg-tertiary); padding: 5px 8px; border-radius: 4px; font-size: 11px; border: 1px solid var(--border);";
+          row.innerHTML = `
+          <div style="display: flex; align-items: center; gap: 5px; overflow: hidden; min-width: 0;">
+            <span>${icon}</span>
+            <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500;" title="${l.nodeName}">${l.nodeName || `Layer ${idx + 1}`}</span>
+            <span style="color: var(--text-dim); font-size: 10px;">(${formatBytes(l.bytes.length)})</span>
+          </div>
+          <button class="btn btn-secondary btn-dl-single-layer" style="padding: 2px 7px; font-size: 10px; margin-left: 6px; flex-shrink: 0;">
+            \u{1F4E5} T\u1EA3i
+          </button>
+        `;
+          row.querySelector(".btn-dl-single-layer")?.addEventListener("click", () => {
+            const isAnim = l.isAnimated;
+            const ext = isAnim ? "gif" : l.format?.toLowerCase().includes("webp") ? "webp" : "png";
+            const mime = isAnim ? "image/gif" : l.mimeType || "image/png";
+            const blob = new Blob([l.bytes], { type: mime });
+            triggerDownload(blob, `${sanitizeFilename(item.frameName)} - ${sanitizeFilename(l.nodeName || "layer")}.${ext}`);
+            showToast(`\u0110\xE3 t\u1EA3i: ${l.nodeName}.${ext}`);
+          });
+          modalLayersList.appendChild(row);
+        });
+        if (btnModalDownloadRaw) {
+          btnModalDownloadRaw.style.display = "block";
+          btnModalDownloadRaw.innerText = `\u{1F4E6} T\u1EA3i t\u1EA5t c\u1EA3 ${layers.length} GIF r\u1EDDi (ZIP)`;
+        }
+      } else {
+        modalLayersContainer.style.display = "none";
+        if (btnModalDownloadRaw) btnModalDownloadRaw.style.display = "none";
+      }
     }
     modal?.classList.add("active");
     if (!item.renderedFrameBlobUrl && !item.isRendering) {
@@ -5721,7 +5880,7 @@
         if (activeModalItem?.id === item.id && modalImg) {
           modalImg.src = item.renderedFrameBlobUrl || URL.createObjectURL(blob);
           if (modalMeta) {
-            modalMeta.innerText = `K\xEDch th\u01B0\u1EDBc: ${item.frameWidth * currentScale} \xD7 ${item.frameHeight * currentScale} px | Layer: ${item.gifNodeName} (${item.format})`;
+            modalMeta.innerText = `K\xEDch th\u01B0\u1EDBc: ${item.frameWidth * currentScale} \xD7 ${item.frameHeight * currentScale} px | Frame: ${item.frameName}`;
           }
         }
         const cardImg = document.getElementById(`img_${item.id}`);
@@ -5742,6 +5901,7 @@
         const zip = new import_jszip.default();
         const folderName = currentExportMode === "frame" ? "figma-frame-widgets" : "figma-raw-gifs";
         const folder = zip.folder(folderName);
+        const usedFileNames = /* @__PURE__ */ new Set();
         for (let i = 0; i < filteredItems.length; i++) {
           const item = filteredItems[i];
           const progressPct = Math.round((i + 1) / filteredItems.length * 100);
@@ -5756,15 +5916,36 @@
             const ext = isAnim ? "gif" : "png";
             folder?.file(`${sanitizeFilename(item.frameName)}.${ext}`, blob);
           } else {
-            const isAnim = item.isGif || item.isAnimated;
-            const ext = isAnim ? "gif" : item.format.toLowerCase().includes("webp") ? "webp" : "png";
-            folder?.file(`${sanitizeFilename(item.gifNodeName || item.frameName)}.${ext}`, item.gifBytes);
+            const layers = item.animatedLayers && item.animatedLayers.length > 0 ? item.animatedLayers : [{
+              nodeName: item.gifNodeName,
+              bytes: item.gifBytes,
+              isAnimated: item.isGif || item.isAnimated,
+              format: item.format,
+              mimeType: item.mimeType
+            }];
+            for (let idx = 0; idx < layers.length; idx++) {
+              const l = layers[idx];
+              const isAnim = l.isAnimated;
+              const ext = isAnim ? "gif" : l.format?.toLowerCase().includes("webp") ? "webp" : "png";
+              const cleanLayer = sanitizeFilename(l.nodeName || `layer_${idx + 1}`);
+              const cleanFrame = sanitizeFilename(item.frameName);
+              let fileName = `${cleanFrame} - ${cleanLayer}.${ext}`;
+              let count = 1;
+              while (usedFileNames.has(fileName.toLowerCase())) {
+                count++;
+                fileName = `${cleanFrame} - ${cleanLayer}_${count}.${ext}`;
+              }
+              usedFileNames.add(fileName.toLowerCase());
+              folder?.file(fileName, l.bytes);
+            }
           }
         }
         updateProgressBar(true, "\u0110ang \u0111\xF3ng g\xF3i file ZIP...", 100);
         const zipBlob = await zip.generateAsync({ type: "blob" });
         triggerDownload(zipBlob, `${folderName}-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.zip`);
-        showToast(`\u0110\xE3 xu\u1EA5t ZIP th\xE0nh c\xF4ng (${filteredItems.length} file)!`);
+        showToast(
+          currentExportMode === "frame" ? `\u0110\xE3 xu\u1EA5t ZIP th\xE0nh c\xF4ng (${filteredItems.length} Frame)!` : `\u0110\xE3 xu\u1EA5t ZIP th\xE0nh c\xF4ng (${usedFileNames.size} file GIF r\u1EDDi g\u1ED3m c\u1ECDc pin & sticker)!`
+        );
       } catch (err) {
         console.error("ZIP Error:", err);
         showToast("L\u1ED7i khi t\u1EA1o file ZIP: " + err.message);

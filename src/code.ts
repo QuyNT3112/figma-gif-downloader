@@ -591,8 +591,16 @@ figma.ui.onmessage = async (msg) => {
             }
 
             const nameHint = (target.node.name + " " + container.name).toLowerCase();
-            if (nameHint.includes(".gif") || nameHint.includes("gif") || nameHint.includes("anim")) {
-              if (!formatInfo.isAnimated) {
+            if (
+              nameHint.includes(".gif") ||
+              nameHint.includes("gif") ||
+              nameHint.includes("anim") ||
+              nameHint.includes("pin") ||
+              nameHint.includes("battery") ||
+              nameHint.includes("cọc") ||
+              nameHint.includes("charg")
+            ) {
+              if (!formatInfo.isAnimated && bytes.length > 0) {
                 formatInfo.isGif = true;
                 formatInfo.isAnimated = true;
                 formatInfo.format = "GIF (Theo tên)";
@@ -665,6 +673,18 @@ figma.ui.onmessage = async (msg) => {
         if (layers.length === 0) continue;
 
         const animLayers = layers.filter((l) => l.isAnimated);
+
+        // Ensure any battery / pin / cọc pin layer is included in animLayers
+        for (const l of layers) {
+          if (!animLayers.some((al) => al.nodeId === l.nodeId)) {
+            const lower = (l.nodeName || "").toLowerCase();
+            if (lower.includes("pin") || lower.includes("battery") || lower.includes("charg") || lower.includes("cọc")) {
+              l.isAnimated = true;
+              animLayers.push(l);
+            }
+          }
+        }
+
         const primaryLayers = animLayers.length > 0 ? animLayers : layers;
         const primary = primaryLayers[0];
 

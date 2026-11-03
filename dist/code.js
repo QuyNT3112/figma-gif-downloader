@@ -414,8 +414,8 @@
                 };
               }
               const nameHint = (target.node.name + " " + container.name).toLowerCase();
-              if (nameHint.includes(".gif") || nameHint.includes("gif") || nameHint.includes("anim")) {
-                if (!formatInfo.isAnimated) {
+              if (nameHint.includes(".gif") || nameHint.includes("gif") || nameHint.includes("anim") || nameHint.includes("pin") || nameHint.includes("battery") || nameHint.includes("c\u1ECDc") || nameHint.includes("charg")) {
+                if (!formatInfo.isAnimated && bytes.length > 0) {
                   formatInfo.isGif = true;
                   formatInfo.isAnimated = true;
                   formatInfo.format = "GIF (Theo t\xEAn)";
@@ -479,6 +479,15 @@
           }
           if (layers.length === 0) continue;
           const animLayers = layers.filter((l) => l.isAnimated);
+          for (const l of layers) {
+            if (!animLayers.some((al) => al.nodeId === l.nodeId)) {
+              const lower = (l.nodeName || "").toLowerCase();
+              if (lower.includes("pin") || lower.includes("battery") || lower.includes("charg") || lower.includes("c\u1ECDc")) {
+                l.isAnimated = true;
+                animLayers.push(l);
+              }
+            }
+          }
           const primaryLayers = animLayers.length > 0 ? animLayers : layers;
           const primary = primaryLayers[0];
           const { visualWidth, visualHeight, cornerRadius, isCapsule } = findWidgetProperties(container);

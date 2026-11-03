@@ -910,7 +910,8 @@ function applyFilterAndRender() {
     if (query) {
       const matchFrame = item.frameName.toLowerCase().includes(query);
       const matchGif = item.gifNodeName.toLowerCase().includes(query);
-      if (!matchFrame && !matchGif) return false;
+      const matchLayers = item.animatedLayers?.some((l) => l.nodeName.toLowerCase().includes(query));
+      if (!matchFrame && !matchGif && !matchLayers) return false;
     }
 
     // 2. Type filter
@@ -934,6 +935,10 @@ function updateStats() {
   const query = (searchInput?.value || "").trim();
 
   const totalAnimated = allScannedItems.filter((i) => i.isGif || i.isAnimated).length;
+  const totalRawGifs = filteredItems.reduce(
+    (acc, item) => acc + (item.animatedLayers && item.animatedLayers.length > 0 ? item.animatedLayers.length : 1),
+    0
+  );
 
   if (statsLabel) {
     if (filteredItems.length === 0) {
@@ -953,7 +958,11 @@ function updateStats() {
         statsLabel.innerText = "Không tìm thấy layer nào chứa ảnh hoặc GIF.";
       }
     } else {
-      statsLabel.innerText = `Tìm thấy ${filteredItems.length} Frame widget (${totalAnimated} ảnh động/GIF)`;
+      if (currentExportMode === "raw") {
+        statsLabel.innerText = `Tìm thấy ${filteredItems.length} Frame (${totalRawGifs} GIF động lẻ gồm cọc pin & sticker)`;
+      } else {
+        statsLabel.innerText = `Tìm thấy ${filteredItems.length} Frame widget (${totalAnimated} ảnh động/GIF)`;
+      }
     }
   }
 
@@ -962,7 +971,7 @@ function updateStats() {
     btnDownloadZip.innerText =
       currentExportMode === "frame"
         ? `📦 Xuất tất cả (${filteredItems.length}) Frame (ZIP)`
-        : `📦 Tải tất cả (${filteredItems.length}) file GIF rời (ZIP)`;
+        : `📦 Tải tất cả (${totalRawGifs}) file GIF rời (ZIP)`;
   }
 }
 
@@ -1023,8 +1032,26 @@ function renderCards(items: ScannedFrameItem[]) {
       ? `<button class="btn btn-secondary btn-force-anim" style="padding: 2px 7px; font-size: 10px; margin-top: 2px;" title="Thử phân tích sâu lại hoạt ảnh">⚡ Ép nhận GIF</button>`
       : "";
 
+    const layersCount = item.animatedLayers && item.animatedLayers.length > 0 ? item.animatedLayers.length : 1;
+    const totalLayersBytes = (item.animatedLayers && item.animatedLayers.length > 0)
+      ? item.animatedLayers.reduce((s, l) => s + (l.bytes?.length || 0), 0)
+      : item.gifBytes.length;
+
+    const rawButtonText = layersCount > 1
+      ? `📦 Lấy ${layersCount} GIF rời`
+      : `📦 Lấy GIF rời`;
+
+    const rawButtonTitle = layersCount > 1
+      ? `Tải trọn bộ ${layersCount} GIF rời của widget này (gồm cả cọc pin & sticker)`
+      : `Tải file ảnh/GIF này`;
+
+    // Layer subtitle display
+    const layerNamesDisplay = item.animatedLayers && item.animatedLayers.length > 1
+      ? item.animatedLayers.map((l) => l.nodeName).join(", ")
+      : item.gifNodeName;
+
     card.innerHTML = `
-      <div class="preview-container" id="preview_${item.id}" title="Bấm để xem kích thước lớn">
+      <div class="preview-container" id="preview_${item.id}" title="Bấm để xem chi tiết & tải các GIF lẻ">
         <img class="preview-img" id="img_${item.id}" src="${item.rawGifBlobUrl}" alt="${item.frameName}">
       </div>
       <div class="card-info">
@@ -1033,12 +1060,12 @@ function renderCards(items: ScannedFrameItem[]) {
           <span class="card-title" title="${item.frameName}">${item.frameName}</span>
           ${formatBadge}
         </div>
-        <div class="card-subtitle" title="Layer: ${item.gifNodeName}">
-          Layer: ${item.gifNodeName}
+        <div class="card-subtitle" title="Các layer: ${layerNamesDisplay}">
+          Layer: ${layerNamesDisplay}
         </div>
         <div class="card-meta">
           <span class="pill pill-size">${item.frameWidth * currentScale} × ${item.frameHeight * currentScale} px (HD)</span>
-          <span class="pill pill-size">${formatBytes(item.gifBytes.length)}</span>
+          <span class="pill pill-size">${layersCount > 1 ? `${layersCount} GIF (${formatBytes(totalLayersBytes)})` : formatBytes(totalLayersBytes)}</span>
         </div>
       </div>
       <div class="card-actions">
@@ -1046,15 +1073,15 @@ function renderCards(items: ScannedFrameItem[]) {
           <button class="btn-icon btn-locate" title="Chuyển đến Frame này trên Canvas">
             🎯
           </button>
-          <button class="btn-icon btn-preview" title="Xem trước hoạt ảnh lớn">
+          <button class="btn-icon btn-preview" title="Xem trước hoạt ảnh lớn & các layer GIF lẻ">
             👁️
           </button>
         </div>
         <button class="btn btn-primary btn-dl-frame" style="padding: 5px 9px; font-size: 11px;">
           🎬 Xuất cả Frame
         </button>
-        <button class="btn btn-secondary btn-dl-raw" style="padding: 3px 8px; font-size: 10px; margin-top: -2px;">
-          📦 Lấy GIF rời
+        <button class="btn btn-secondary btn-dl-raw" style="padding: 3px 8px; font-size: 10px; margin-top: -2px;" title="${rawButtonTitle}">
+          ${rawButtonText}
         </button>
         ${forceAnimBtn}
       </div>
@@ -1122,14 +1149,63 @@ function renderCards(items: ScannedFrameItem[]) {
       }
     });
 
-    // Download Isolated GIF (Instant!)
-    card.querySelector(".btn-dl-raw")?.addEventListener("click", () => {
-      const isAnim = item.isGif || item.isAnimated;
-      const ext = isAnim ? "gif" : (item.format.toLowerCase().includes("webp") ? "webp" : "png");
-      const mime = isAnim ? "image/gif" : (item.mimeType || "image/png");
-      const blob = new Blob([item.gifBytes as any], { type: mime });
-      triggerDownload(blob, `${sanitizeFilename(item.gifNodeName || item.frameName)}.${ext}`);
-      showToast(`Đã tải file ảnh: ${item.gifNodeName}.${ext}`);
+    // Download Isolated GIF(s) - includes BOTH sticker and cọc pin!
+    card.querySelector(".btn-dl-raw")?.addEventListener("click", async () => {
+      const layers = (item.animatedLayers && item.animatedLayers.length > 0)
+        ? item.animatedLayers
+        : [{
+            nodeName: item.gifNodeName,
+            bytes: item.gifBytes,
+            isAnimated: item.isGif || item.isAnimated,
+            format: item.format,
+            mimeType: item.mimeType
+          }];
+
+      if (layers.length === 1) {
+        const l = layers[0];
+        const isAnim = l.isAnimated;
+        const ext = isAnim ? "gif" : (l.format?.toLowerCase().includes("webp") ? "webp" : "png");
+        const mime = isAnim ? "image/gif" : (l.mimeType || "image/png");
+        const blob = new Blob([l.bytes as any], { type: mime });
+        triggerDownload(blob, `${sanitizeFilename(item.frameName)} - ${sanitizeFilename(l.nodeName || "sticker")}.${ext}`);
+        showToast(`Đã tải file GIF: ${l.nodeName || item.frameName}.${ext}`);
+      } else {
+        // Multiple layers (including cọc pin & sticker): package into clean ZIP for this frame
+        const btnRaw = card.querySelector(".btn-dl-raw") as HTMLButtonElement;
+        const origText = btnRaw.innerText;
+        btnRaw.disabled = true;
+        btnRaw.innerText = "⏳ Đang nén...";
+
+        try {
+          const zip = new JSZip();
+          const usedNames = new Set<string>();
+
+          for (let idx = 0; idx < layers.length; idx++) {
+            const l = layers[idx];
+            const isAnim = l.isAnimated;
+            const ext = isAnim ? "gif" : (l.format?.toLowerCase().includes("webp") ? "webp" : "png");
+            const cleanLayer = sanitizeFilename(l.nodeName || `layer_${idx + 1}`);
+            const cleanFrame = sanitizeFilename(item.frameName);
+            let fileName = `${cleanFrame} - ${cleanLayer}.${ext}`;
+            let count = 1;
+            while (usedNames.has(fileName.toLowerCase())) {
+              count++;
+              fileName = `${cleanFrame} - ${cleanLayer}_${count}.${ext}`;
+            }
+            usedNames.add(fileName.toLowerCase());
+            zip.file(fileName, l.bytes);
+          }
+
+          const zipBlob = await zip.generateAsync({ type: "blob" });
+          triggerDownload(zipBlob, `${sanitizeFilename(item.frameName)}-cac-gif-le.zip`);
+          showToast(`Đã tải ${layers.length} GIF rời của Frame "${item.frameName}" (gồm cọc pin & sticker)!`);
+        } catch (err: any) {
+          showToast("Lỗi khi tải GIF rời: " + err.message);
+        } finally {
+          btnRaw.disabled = false;
+          btnRaw.innerText = origText;
+        }
+      }
     });
 
     container.appendChild(card);
@@ -1141,6 +1217,7 @@ function initModal() {
   const modal = document.getElementById("previewModal");
   const btnClose = document.getElementById("btnCloseModal");
   const btnDownload = document.getElementById("btnModalDownload");
+  const btnDownloadRaw = document.getElementById("btnModalDownloadRaw");
 
   btnClose?.addEventListener("click", () => {
     modal?.classList.remove("active");
@@ -1163,8 +1240,52 @@ function initModal() {
       } catch (err: any) {
         showToast("Lỗi xuất: " + err.message);
       } finally {
-        btnDownload.innerText = "🎬 Xuất Frame GIF";
+        btnDownload.innerText = "🎬 Xuất cả Frame GIF";
       }
+    }
+  });
+
+  btnDownloadRaw?.addEventListener("click", async () => {
+    if (!activeModalItem) return;
+    const layers = (activeModalItem.animatedLayers && activeModalItem.animatedLayers.length > 0)
+      ? activeModalItem.animatedLayers
+      : [{
+          nodeName: activeModalItem.gifNodeName,
+          bytes: activeModalItem.gifBytes,
+          isAnimated: activeModalItem.isGif || activeModalItem.isAnimated,
+          format: activeModalItem.format,
+          mimeType: activeModalItem.mimeType
+        }];
+
+    if (layers.length === 1) {
+      const l = layers[0];
+      const isAnim = l.isAnimated;
+      const ext = isAnim ? "gif" : (l.format?.toLowerCase().includes("webp") ? "webp" : "png");
+      const mime = isAnim ? "image/gif" : (l.mimeType || "image/png");
+      const blob = new Blob([l.bytes as any], { type: mime });
+      triggerDownload(blob, `${sanitizeFilename(activeModalItem.frameName)} - ${sanitizeFilename(l.nodeName)}.${ext}`);
+      showToast(`Đã tải: ${l.nodeName}.${ext}`);
+    } else {
+      const zip = new JSZip();
+      const used = new Set<string>();
+      for (let idx = 0; idx < layers.length; idx++) {
+        const l = layers[idx];
+        const isAnim = l.isAnimated;
+        const ext = isAnim ? "gif" : (l.format?.toLowerCase().includes("webp") ? "webp" : "png");
+        const cleanLayer = sanitizeFilename(l.nodeName || `layer_${idx + 1}`);
+        const cleanFrame = sanitizeFilename(activeModalItem.frameName);
+        let fileName = `${cleanFrame} - ${cleanLayer}.${ext}`;
+        let count = 1;
+        while (used.has(fileName.toLowerCase())) {
+          count++;
+          fileName = `${cleanFrame} - ${cleanLayer}_${count}.${ext}`;
+        }
+        used.add(fileName.toLowerCase());
+        zip.file(fileName, l.bytes);
+      }
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      triggerDownload(zipBlob, `${sanitizeFilename(activeModalItem.frameName)}-cac-gif-le.zip`);
+      showToast(`Đã tải ${layers.length} GIF rời của Frame "${activeModalItem.frameName}"!`);
     }
   });
 }
@@ -1175,13 +1296,66 @@ function openModal(item: ScannedFrameItem) {
   const modalTitle = document.getElementById("modalTitle");
   const modalImg = document.getElementById("modalImg") as HTMLImageElement;
   const modalMeta = document.getElementById("modalMeta");
+  const modalLayersContainer = document.getElementById("modalLayersContainer");
+  const modalLayersList = document.getElementById("modalLayersList");
+  const btnModalDownloadRaw = document.getElementById("btnModalDownloadRaw") as HTMLButtonElement;
 
   if (modalTitle) modalTitle.innerText = `Xem trước: ${item.frameName}`;
   if (modalImg) {
     modalImg.src = item.renderedFrameBlobUrl || item.rawGifBlobUrl || "";
   }
   if (modalMeta) {
-    modalMeta.innerText = `Kích thước: ${item.frameWidth * currentScale} × ${item.frameHeight * currentScale} px | Layer: ${item.gifNodeName} (${item.format})`;
+    modalMeta.innerText = `Kích thước: ${item.frameWidth * currentScale} × ${item.frameHeight * currentScale} px | Frame: ${item.frameName}`;
+  }
+
+  // Populate individual GIF layers list (including cọc pin & sticker)
+  const layers = (item.animatedLayers && item.animatedLayers.length > 0)
+    ? item.animatedLayers
+    : [{
+        nodeName: item.gifNodeName,
+        bytes: item.gifBytes,
+        isAnimated: item.isGif || item.isAnimated,
+        format: item.format,
+        mimeType: item.mimeType
+      }];
+
+  if (modalLayersContainer && modalLayersList) {
+    if (layers.length > 1) {
+      modalLayersContainer.style.display = "flex";
+      modalLayersList.innerHTML = "";
+      layers.forEach((l, idx) => {
+        const isPin = /pin|battery|charg|cọc/i.test(l.nodeName);
+        const icon = isPin ? "🔋" : "✨";
+        const row = document.createElement("div");
+        row.style.cssText = "display: flex; align-items: center; justify-content: space-between; background: var(--bg-tertiary); padding: 5px 8px; border-radius: 4px; font-size: 11px; border: 1px solid var(--border);";
+        row.innerHTML = `
+          <div style="display: flex; align-items: center; gap: 5px; overflow: hidden; min-width: 0;">
+            <span>${icon}</span>
+            <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500;" title="${l.nodeName}">${l.nodeName || `Layer ${idx + 1}`}</span>
+            <span style="color: var(--text-dim); font-size: 10px;">(${formatBytes(l.bytes.length)})</span>
+          </div>
+          <button class="btn btn-secondary btn-dl-single-layer" style="padding: 2px 7px; font-size: 10px; margin-left: 6px; flex-shrink: 0;">
+            📥 Tải
+          </button>
+        `;
+        row.querySelector(".btn-dl-single-layer")?.addEventListener("click", () => {
+          const isAnim = l.isAnimated;
+          const ext = isAnim ? "gif" : (l.format?.toLowerCase().includes("webp") ? "webp" : "png");
+          const mime = isAnim ? "image/gif" : (l.mimeType || "image/png");
+          const blob = new Blob([l.bytes as any], { type: mime });
+          triggerDownload(blob, `${sanitizeFilename(item.frameName)} - ${sanitizeFilename(l.nodeName || "layer")}.${ext}`);
+          showToast(`Đã tải: ${l.nodeName}.${ext}`);
+        });
+        modalLayersList.appendChild(row);
+      });
+      if (btnModalDownloadRaw) {
+        btnModalDownloadRaw.style.display = "block";
+        btnModalDownloadRaw.innerText = `📦 Tải tất cả ${layers.length} GIF rời (ZIP)`;
+      }
+    } else {
+      modalLayersContainer.style.display = "none";
+      if (btnModalDownloadRaw) btnModalDownloadRaw.style.display = "none";
+    }
   }
 
   modal?.classList.add("active");
@@ -1195,7 +1369,7 @@ function openModal(item: ScannedFrameItem) {
       if (activeModalItem?.id === item.id && modalImg) {
         modalImg.src = item.renderedFrameBlobUrl || URL.createObjectURL(blob);
         if (modalMeta) {
-          modalMeta.innerText = `Kích thước: ${item.frameWidth * currentScale} × ${item.frameHeight * currentScale} px | Layer: ${item.gifNodeName} (${item.format})`;
+          modalMeta.innerText = `Kích thước: ${item.frameWidth * currentScale} × ${item.frameHeight * currentScale} px | Frame: ${item.frameName}`;
         }
       }
       const cardImg = document.getElementById(`img_${item.id}`) as HTMLImageElement;
@@ -1221,6 +1395,7 @@ function initBatchDownload() {
       const zip = new JSZip();
       const folderName = currentExportMode === "frame" ? "figma-frame-widgets" : "figma-raw-gifs";
       const folder = zip.folder(folderName);
+      const usedFileNames = new Set<string>();
 
       for (let i = 0; i < filteredItems.length; i++) {
         const item = filteredItems[i];
@@ -1237,16 +1412,43 @@ function initBatchDownload() {
           const ext = isAnim ? "gif" : "png";
           folder?.file(`${sanitizeFilename(item.frameName)}.${ext}`, blob);
         } else {
-          const isAnim = item.isGif || item.isAnimated;
-          const ext = isAnim ? "gif" : (item.format.toLowerCase().includes("webp") ? "webp" : "png");
-          folder?.file(`${sanitizeFilename(item.gifNodeName || item.frameName)}.${ext}`, item.gifBytes);
+          // Export ALL individual animated GIFs (including cọc pin & sticker)
+          const layers = (item.animatedLayers && item.animatedLayers.length > 0)
+            ? item.animatedLayers
+            : [{
+                nodeName: item.gifNodeName,
+                bytes: item.gifBytes,
+                isAnimated: item.isGif || item.isAnimated,
+                format: item.format,
+                mimeType: item.mimeType
+              }];
+
+          for (let idx = 0; idx < layers.length; idx++) {
+            const l = layers[idx];
+            const isAnim = l.isAnimated;
+            const ext = isAnim ? "gif" : (l.format?.toLowerCase().includes("webp") ? "webp" : "png");
+            const cleanLayer = sanitizeFilename(l.nodeName || `layer_${idx + 1}`);
+            const cleanFrame = sanitizeFilename(item.frameName);
+            let fileName = `${cleanFrame} - ${cleanLayer}.${ext}`;
+            let count = 1;
+            while (usedFileNames.has(fileName.toLowerCase())) {
+              count++;
+              fileName = `${cleanFrame} - ${cleanLayer}_${count}.${ext}`;
+            }
+            usedFileNames.add(fileName.toLowerCase());
+            folder?.file(fileName, l.bytes);
+          }
         }
       }
 
       updateProgressBar(true, "Đang đóng gói file ZIP...", 100);
       const zipBlob = await zip.generateAsync({ type: "blob" });
       triggerDownload(zipBlob, `${folderName}-${new Date().toISOString().slice(0, 10)}.zip`);
-      showToast(`Đã xuất ZIP thành công (${filteredItems.length} file)!`);
+      showToast(
+        currentExportMode === "frame"
+          ? `Đã xuất ZIP thành công (${filteredItems.length} Frame)!`
+          : `Đã xuất ZIP thành công (${usedFileNames.size} file GIF rời gồm cọc pin & sticker)!`
+      );
     } catch (err: any) {
       console.error("ZIP Error:", err);
       showToast("Lỗi khi tạo file ZIP: " + err.message);

@@ -875,7 +875,7 @@
             <span>⚙️ Chế độ xuất:</span>
             <select id="exportModeSelect" class="mode-select">
               <option value="frame" selected>🖼️ Xuất cả Frame (Toàn bộ Widget)</option>
-              <option value="raw">📦 Chỉ lấy file GIF rời</option>
+              <option value="raw">📦 Chỉ lấy file GIF rời (gồm cọc pin & sticker)</option>
             </select>
           </div>
           <div style="display: flex; align-items: center; gap: 4px;">
@@ -1023,7 +1023,7 @@
 
   <!-- Fullscreen Preview Modal -->
   <div class="modal-backdrop" id="previewModal">
-    <div class="modal-box">
+    <div class="modal-box" style="max-width: 420px; width: 95%;">
       <div class="modal-header">
         <span id="modalTitle" style="font-weight: 600; font-size: 13px;">Chi tiết hoạt ảnh</span>
         <button class="btn-icon" id="btnCloseModal">✕</button>
@@ -1032,9 +1032,23 @@
         <img id="modalImg" class="modal-img">
       </div>
       <div id="modalMeta" style="font-size: 11px; color: var(--text-muted); text-align: center;"></div>
-      <button class="btn btn-primary" id="btnModalDownload">
-        📥 Tải GIF này về máy
-      </button>
+
+      <!-- Individual Layers Section -->
+      <div id="modalLayersContainer" style="display: none; flex-direction: column; gap: 6px; width: 100%;">
+        <div style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">
+          Danh sách GIF động lẻ (gồm cọc pin & sticker):
+        </div>
+        <div id="modalLayersList" style="display: flex; flex-direction: column; gap: 5px; max-height: 120px; overflow-y: auto;"></div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 6px; width: 100%;">
+        <button class="btn btn-primary" id="btnModalDownload" style="width: 100%;">
+          🎬 Xuất cả Frame GIF
+        </button>
+        <button class="btn btn-secondary" id="btnModalDownloadRaw" style="width: 100%; display: none;">
+          📦 Tải tất cả GIF rời (ZIP)
+        </button>
+      </div>
     </div>
   </div>
 
